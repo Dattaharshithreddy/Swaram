@@ -31,8 +31,7 @@
           "recordAudioAndroid": true
         }
       ],
-      "expo-secure-store",
-      "onnxruntime-react-native"
+      "expo-secure-store"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

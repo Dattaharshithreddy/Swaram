@@ -125,7 +125,6 @@ export function OfflineScreen() {
       const { wav, timing } = await eng.speak(data, prepareText(text.trim(), voice.language), {
         steps,
         onProgress: (done, total) => setProgress({ done, total }),
-        shouldStop: () => stopRef.current,
       });
       const file = saveAudio(encodeWav(wav));
       setResult({ uri: file.uri, timing, wall: (Date.now() - t0) / 1000 });
@@ -273,7 +272,6 @@ export function OfflineScreen() {
                           : 'Preparing…'
                     }
                   />
-                  <Button title="Stop" kind="secondary" onPress={() => (stopRef.current = true)} />
                 </>
               ) : (
                 <Button title="Generate on this phone" onPress={generate} disabled={!text.trim()} />
