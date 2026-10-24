@@ -2,8 +2,9 @@
 
 Any client built against OpenAI's text-to-speech API (the official ``openai``
 SDKs, Open WebUI, Home Assistant, SillyTavern, shell scripts...) can point at
-a local Voicebox by changing only the base URL. Voicebox has no API keys, so
-the ``Authorization`` header is accepted and ignored.
+a local Voicebox by changing only the base URL. Locally the ``Authorization``
+header is ignored; on a server with ``SWARAM_API_KEY`` set it must carry that
+key (see ``backend/utils/api_key.py``).
 
 Request field mapping
 ---------------------

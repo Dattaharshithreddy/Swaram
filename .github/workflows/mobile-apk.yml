@@ -1,0 +1,81 @@
+name: Mobile APK
+
+# Builds the Swaram Android app on GitHub's servers, so no laptop or Android
+# Studio is needed. The APK appears under Releases -> "Swaram mobile (latest)".
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-apk.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: mobile/android
+        env:
+          GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
+        # Signed with the debug key from the Expo template: fine for
+        # installing directly, not for the Play Store (use EAS for that).
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Name the APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk swaram-latest.apk
+          ls -l swaram-latest.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swaram-apk
+          path: mobile/swaram-latest.apk
+
+      - name: Publish to the "mobile-latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mobile-latest
+          name: Swaram mobile (latest)
+          prerelease: true
+          make_latest: false
+          body: |
+            Android app built from ${{ github.sha }}.
+            Download the .apk on your phone, open it, and allow "install unknown apps" when asked.
+            Then open Swaram → Settings and enter your server URL and API key (see deploy/README.md).
+          files: mobile/swaram-latest.apk
+          overwrite_files: true

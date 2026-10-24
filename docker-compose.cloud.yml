@@ -1,0 +1,43 @@
+# Swaram on a cloud GPU server, for the mobile app.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build
+#
+# Adds on top of docker-compose.yml:
+#   - the NVIDIA GPU (needs the NVIDIA Container Toolkit on the host)
+#   - API-key protection (SWARAM_API_KEY) and Hugging Face login (HF_TOKEN)
+#   - a Cloudflare quick tunnel that gives the server a free https:// URL
+#     without opening any port or buying a domain
+#
+# deploy/setup-gpu-vm.sh does all of this for you, including the .env file.
+
+services:
+  voicebox:
+    environment:
+      - LOG_LEVEL=info
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - SWARAM_API_KEY=${SWARAM_API_KEY:?Set SWARAM_API_KEY in .env (deploy/setup-gpu-vm.sh creates it)}
+      - HF_TOKEN=${HF_TOKEN:-}
+    deploy:
+      resources:
+        limits:
+          cpus: "${SWARAM_CPUS:-8}"
+          memory: "${SWARAM_MEMORY:-24G}"
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  tunnel:
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: swaram-tunnel
+    restart: unless-stopped
+    # Prints the public https://<random>.trycloudflare.com URL in its logs:
+    #   docker compose logs tunnel | grep trycloudflare
+    # The URL changes when this container restarts. For a fixed URL, point a
+    # domain at the server instead (see deploy/README.md).
+    command: tunnel --no-autoupdate --url http://voicebox:17493
+    depends_on:
+      - voicebox
+    networks:
+      - voicebox-net

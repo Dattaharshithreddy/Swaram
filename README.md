@@ -21,6 +21,16 @@
 
 Everything else (voice profiles, Whisper transcription, effects, stories, MCP and REST APIs, the desktop app) is Voicebox, unchanged.
 
+## Clone voices from a phone (no laptop, no graphics card)
+
+Voice cloning needs a GPU, so the phone app sends the work to a Swaram server
+on a rented cloud GPU and just records, uploads and plays audio.
+
+1. **Server:** rent an Ubuntu GPU machine and run one command. See [deploy/README.md](deploy/README.md).
+2. **App:** install the APK from Releases → "Swaram mobile (latest)", then enter the server URL and API key. See [mobile/README.md](mobile/README.md).
+
+On a public server, `SWARAM_API_KEY` must be sent with every request (`Authorization: Bearer <key>`). Without that variable the server stays open, as the local desktop app expects.
+
 ## Engines and languages
 
 | Engine | Languages | Licence of weights | Use for |

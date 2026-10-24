@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -71,10 +72,13 @@ def dub(args: argparse.Namespace) -> int:
         fields["seed"] = str(args.seed)
 
     body, content_type = _multipart(fields, "file", srt)
+    req_headers = {"Content-Type": content_type}
+    if args.api_key:
+        req_headers["Authorization"] = f"Bearer {args.api_key}"
     req = urllib.request.Request(
         args.server.rstrip("/") + "/dub/srt",
         data=body,
-        headers={"Content-Type": content_type},
+        headers=req_headers,
         method="POST",
     )
     print(f"Dubbing {srt.name} with voice '{args.profile}' ({args.language})... this can take a while.")
@@ -162,7 +166,12 @@ def main() -> int:
     p.add_argument("--video", help="Also mux the dub into this video with ffmpeg")
     p.add_argument("--replace-audio", action="store_true", help="With --video: replace the original audio instead of adding a track")
     p.add_argument("--out", help="Output WAV path (default: next to the .srt)")
-    p.add_argument("--server", default=DEFAULT_SERVER)
+    p.add_argument("--server", default=os.environ.get("SWARAM_SERVER", DEFAULT_SERVER))
+    p.add_argument(
+        "--api-key",
+        default=os.environ.get("SWARAM_API_KEY", ""),
+        help="Needed for a cloud server (default: $SWARAM_API_KEY)",
+    )
     p.add_argument("--timeout", type=float, default=3600, help="Seconds to wait for the server")
     return dub(p.parse_args())
 

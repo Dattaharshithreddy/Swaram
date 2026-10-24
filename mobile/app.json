@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Swaram",
+    "slug": "swaram",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dattaharshithreddy.swaram"
+    },
+    "android": {
+      "package": "com.dattaharshithreddy.swaram",
+      "adaptiveIcon": {
+        "backgroundColor": "#C4213A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": ["android.permission.RECORD_AUDIO"],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Swaram records a short clip of your voice so it can be cloned.",
+          "recordAudioAndroid": true
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

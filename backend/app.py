@@ -154,6 +154,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Added before CORS so CORS stays the outermost layer and 401s still
+    # carry CORS headers. No-op unless SWARAM_API_KEY is set.
+    _configure_api_key(application)
     _configure_cors(application)
     application.add_middleware(ClientIdMiddleware)
     register_routers(application)
@@ -162,6 +165,17 @@ def create_app() -> FastAPI:
     _mount_frontend(application)
 
     return application
+
+
+def _configure_api_key(application: FastAPI) -> None:
+    """Require an API key on every request when SWARAM_API_KEY is set."""
+    from .utils.api_key import ApiKeyMiddleware, configured_key
+
+    key = configured_key()
+    if key is None:
+        return
+    application.add_middleware(ApiKeyMiddleware, api_key=key)
+    logger.info("API key protection enabled (SWARAM_API_KEY)")
 
 
 def _configure_cors(application: FastAPI) -> None:
