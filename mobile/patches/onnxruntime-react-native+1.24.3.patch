@@ -70,3 +70,85 @@ index 41b4359..d3d3183 100644
          include "**/*.h", "**/*.so"
        }
      }
+diff --git a/node_modules/onnxruntime-react-native/android/src/main/java/ai/onnxruntime/reactnative/OnnxruntimeModule.java b/node_modules/onnxruntime-react-native/android/src/main/java/ai/onnxruntime/reactnative/OnnxruntimeModule.java
+index c362e6a..67bc1d4 100644
+--- a/node_modules/onnxruntime-react-native/android/src/main/java/ai/onnxruntime/reactnative/OnnxruntimeModule.java
++++ b/node_modules/onnxruntime-react-native/android/src/main/java/ai/onnxruntime/reactnative/OnnxruntimeModule.java
+@@ -47,11 +47,18 @@ public class OnnxruntimeModule extends ReactContextBaseJavaModule {
+     try {
+       System.loadLibrary("onnxruntimejsi");
+       JavaScriptContextHolder jsContext = getReactApplicationContext().getJavaScriptContextHolder();
++      // Swaram: getCatalystInstance() is unavailable in bridgeless (New
++      // Architecture) apps; ReactContext exposes the call invoker directly.
+       CallInvokerHolderImpl jsCallInvokerHolder =
+-        (CallInvokerHolderImpl) getReactApplicationContext().getCatalystInstance().getJSCallInvokerHolder();
++        (CallInvokerHolderImpl) getReactApplicationContext().getJSCallInvokerHolder();
++      if (jsContext == null || jsContext.get() == 0 || jsCallInvokerHolder == null) {
++        return false;
++      }
+       nativeInstall(jsContext.get(), jsCallInvokerHolder);
+       return true;
+-    } catch (Exception e) {
++    } catch (Throwable e) {
++      // UnsatisfiedLinkError is an Error, not an Exception; never crash the app.
++      android.util.Log.e("Onnxruntime", "install failed", e);
+       return false;
+     }
+   }
+diff --git a/node_modules/onnxruntime-react-native/dist/commonjs/binding.js b/node_modules/onnxruntime-react-native/dist/commonjs/binding.js
+index b5ca0ca..4124e70 100644
+--- a/node_modules/onnxruntime-react-native/dist/commonjs/binding.js
++++ b/node_modules/onnxruntime-react-native/dist/commonjs/binding.js
+@@ -9,8 +9,12 @@ var _reactNative = require("react-native");
+ // Licensed under the MIT License.
+ 
+ const Module = exports.Module = _reactNative.NativeModules.Onnxruntime;
+-if (typeof globalThis.OrtApi === 'undefined') {
+-  Module.install();
++if (typeof globalThis.OrtApi === 'undefined' && Module && typeof Module.install === 'function') {
++  try {
++    Module.install();
++  } catch (e) {
++    // Swaram: report through OrtApi below instead of crashing at import.
++  }
+ }
+ const OrtApi = exports.OrtApi = globalThis.OrtApi ?? new Proxy({}, {
+   get: () => {
+diff --git a/node_modules/onnxruntime-react-native/dist/module/binding.js b/node_modules/onnxruntime-react-native/dist/module/binding.js
+index e1bca3a..f1f8e28 100644
+--- a/node_modules/onnxruntime-react-native/dist/module/binding.js
++++ b/node_modules/onnxruntime-react-native/dist/module/binding.js
+@@ -5,8 +5,12 @@
+ 
+ import { NativeModules } from 'react-native';
+ export const Module = NativeModules.Onnxruntime;
+-if (typeof globalThis.OrtApi === 'undefined') {
+-  Module.install();
++if (typeof globalThis.OrtApi === 'undefined' && Module && typeof Module.install === 'function') {
++  try {
++    Module.install();
++  } catch (e) {
++    // Swaram: report through OrtApi below instead of crashing at import.
++  }
+ }
+ export const OrtApi = globalThis.OrtApi ?? new Proxy({}, {
+   get: () => {
+diff --git a/node_modules/onnxruntime-react-native/lib/binding.ts b/node_modules/onnxruntime-react-native/lib/binding.ts
+index f5963a0..6fa6713 100644
+--- a/node_modules/onnxruntime-react-native/lib/binding.ts
++++ b/node_modules/onnxruntime-react-native/lib/binding.ts
+@@ -10,8 +10,12 @@ declare global {
+   var OrtApi: OrtApiType; // eslint-disable-line no-var
+ }
+ 
+-if (typeof globalThis.OrtApi === 'undefined') {
+-  Module.install();
++if (typeof globalThis.OrtApi === 'undefined' && Module && typeof Module.install === 'function') {
++  try {
++    Module.install();
++  } catch {
++    // Swaram: report through OrtApi below instead of crashing at import.
++  }
+ }
+ 
+ export const OrtApi =

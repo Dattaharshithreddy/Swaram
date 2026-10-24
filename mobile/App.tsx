@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { api, type VoiceProfile } from './src/api';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { OfflineScreen } from './src/screens/OfflineScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SpeakScreen } from './src/screens/SpeakScreen';
@@ -71,6 +72,7 @@ function Main() {
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={['top', 'left', 'right']}>
       <StatusBar style="auto" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ErrorBoundary resetKey={tab}>
         <View style={{ flex: 1 }}>
           {tab === 'speak' && <SpeakScreen config={config} voices={voices} onGoToVoices={() => setTab('voices')} />}
           {tab === 'voices' && (
@@ -85,6 +87,7 @@ function Main() {
           {tab === 'offline' && <OfflineScreen />}
           {tab === 'settings' && <SettingsScreen config={config} onSave={save} />}
         </View>
+        </ErrorBoundary>
       </KeyboardAvoidingView>
       <SafeAreaView edges={['bottom']} style={[styles.tabBar, { borderColor: t.line, backgroundColor: t.surface }]}>
         {TABS.map((item) => {

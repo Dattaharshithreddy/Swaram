@@ -4,7 +4,31 @@
  * edge/swaram_edge/runner.py, which is tested against the original model.
  */
 import { File, type Directory } from 'expo-file-system';
-import { InferenceSession, Tensor } from 'onnxruntime-react-native';
+import type { InferenceSession as InferenceSessionType, Tensor as TensorType } from 'onnxruntime-react-native';
+
+type Ort = typeof import('onnxruntime-react-native');
+let ort: Ort | null = null;
+
+/**
+ * Load ONNX Runtime only when the offline engine is used. Importing it at app
+ * start runs its native setup, and if that fails the whole app would crash on
+ * launch; loaded here, a failure is a message in the Offline tab instead.
+ */
+export function loadOrt(): Ort {
+  if (ort) return ort;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod: Ort = require('onnxruntime-react-native');
+    mod.listSupportedBackends(); // throws if the native part did not start
+    ort = mod;
+    return mod;
+  } catch (e) {
+    throw new Error(
+      `The offline engine could not start on this phone (${e instanceof Error ? e.message : String(e)}). ` +
+        'Use the server mode for now.',
+    );
+  }
+}
 import { crossFade, gaussian, rms, SAMPLE_RATE, trimSilence, utf8Length } from './dsp';
 
 const HOP = 256;
@@ -78,22 +102,24 @@ const now = () => (typeof performance !== 'undefined' ? performance.now() : Date
 
 export class EdgeEngine {
   private constructor(
-    private readonly mel: InferenceSession,
-    private readonly context: InferenceSession,
-    private readonly step: InferenceSession,
-    private readonly vocoder: InferenceSession,
+    private readonly ort: Ort,
+    private readonly mel: InferenceSessionType,
+    private readonly context: InferenceSessionType,
+    private readonly step: InferenceSessionType,
+    private readonly vocoder: InferenceSessionType,
     private readonly vocab: Map<string, number>,
     readonly loadSeconds: number,
   ) {}
 
   static async load(dir: Directory, provider: Provider = 'xnnpack', threads = 4): Promise<EdgeEngine> {
     const t0 = now();
-    const options: InferenceSession.SessionOptions = {
+    const ort = loadOrt();
+    const options: InferenceSessionType.SessionOptions = {
       executionProviders: provider === 'cpu' ? ['cpu'] : [provider, 'cpu'],
       graphOptimizationLevel: 'all',
       intraOpNumThreads: threads,
     };
-    const open = (name: string) => InferenceSession.create(new File(dir, name).uri, options);
+    const open = (name: string) => ort.InferenceSession.create(new File(dir, name).uri, options);
     // The big step graph and the small ones load in parallel.
     const [mel, context, step, vocoder] = await Promise.all([
       open('mel.onnx'),
@@ -103,7 +129,7 @@ export class EdgeEngine {
     ]);
     const vocabList: string[] = JSON.parse(await new File(dir, 'vocab.json').text());
     const vocab = new Map(vocabList.map((tok, i) => [tok, i] as [string, number]));
-    return new EdgeEngine(mel, context, step, vocoder, vocab, now() - t0);
+    return new EdgeEngine(ort, mel, context, step, vocoder, vocab, now() - t0);
   }
 
   async release(): Promise<void> {
@@ -118,7 +144,7 @@ export class EdgeEngine {
       const g = TARGET_RMS / level;
       clip = clip.map((s) => s * g);
     }
-    const out = await this.mel.run({ wav: new Tensor('float32', clip, [1, clip.length]) });
+    const out = await this.mel.run({ wav: new this.ort.Tensor('float32', clip, [1, clip.length]) });
     const mel = out.mel;
     return {
       mel: new Float32Array(mel.data as Float32Array),
@@ -128,13 +154,13 @@ export class EdgeEngine {
     };
   }
 
-  private tokens(text: string): Tensor {
+  private tokens(text: string): TensorType {
     const chars = Array.from(text);
     const ids = new BigInt64Array(chars.length);
     chars.forEach((c, i) => {
       ids[i] = BigInt(this.vocab.get(c) ?? 0);
     });
-    return new Tensor('int64', ids, [1, chars.length]);
+    return new this.ort.Tensor('int64', ids, [1, chars.length]);
   }
 
   private async speakChunk(voice: EdgeVoiceData, text: string, opts: Required<Omit<SpeakOptions, 'onProgress' | 'shouldStop'>> & SpeakOptions, timing: Timing, offset: { done: number; total: number }) {
@@ -147,19 +173,19 @@ export class EdgeEngine {
     const cond = new Float32Array(duration * N_MELS);
     cond.set(voice.mel.subarray(0, refFrames * N_MELS), 0);
     let t0 = now();
-    const ctx = (await this.context.run({ text: ids, cond: new Tensor('float32', cond, [1, duration, N_MELS]) })).ctx;
+    const ctx = (await this.context.run({ text: ids, cond: new this.ort.Tensor('float32', cond, [1, duration, N_MELS]) })).ctx;
     timing.contextSeconds += now() - t0;
 
     t0 = now();
     const x = gaussian(duration * N_MELS);
     const ts = swaySchedule(opts.steps, opts.sway);
-    const cfg = new Tensor('float32', new Float32Array([opts.cfg]), [1]);
+    const cfg = new this.ort.Tensor('float32', new Float32Array([opts.cfg]), [1]);
     for (let i = 0; i < opts.steps; i++) {
       if (opts.shouldStop?.()) throw new Error('Stopped');
       const out = await this.step.run({
-        x: new Tensor('float32', x, [1, duration, N_MELS]),
+        x: new this.ort.Tensor('float32', x, [1, duration, N_MELS]),
         ctx,
-        t: new Tensor('float32', new Float32Array([ts[i]]), [1]),
+        t: new this.ort.Tensor('float32', new Float32Array([ts[i]]), [1]),
         cfg,
       });
       const v = out.v.data as Float32Array;
@@ -178,7 +204,7 @@ export class EdgeEngine {
       const row = (refFrames + f) * N_MELS;
       for (let m = 0; m < N_MELS; m++) melT[m * gen + f] = x[row + m];
     }
-    const wavOut = (await this.vocoder.run({ mel: new Tensor('float32', melT, [1, N_MELS, gen]) })).wav;
+    const wavOut = (await this.vocoder.run({ mel: new this.ort.Tensor('float32', melT, [1, N_MELS, gen]) })).wav;
     let wav = new Float32Array(wavOut.data as Float32Array);
     if (voice.rms < TARGET_RMS) {
       const g = voice.rms / TARGET_RMS;
