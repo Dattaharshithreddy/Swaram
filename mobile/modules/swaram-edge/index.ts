@@ -6,6 +6,10 @@ export interface SynthOptions {
   cfg: number;
   progressBase: number;
   progressTotal: number;
+  /** ids.length */
+  tokens: number;
+  /** schedule.length - 1 */
+  steps: number;
 }
 
 export interface SynthTiming {
@@ -18,7 +22,7 @@ export interface SynthTiming {
 export interface SwaramEdgeNative {
   load(dir: string, threads: number, provider: string): Promise<number>;
   release(): Promise<void>;
-  computeMel(wav: Float32Array, out: Float32Array): Promise<number>;
+  computeMel(wav: Float32Array, wavLength: number, out: Float32Array, outLength: number): Promise<number>;
   synthesize(
     ids: Int32Array,
     cond: Float32Array,

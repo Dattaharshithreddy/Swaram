@@ -25,6 +25,8 @@ class SynthOptions : Record {
   @Field val cfg: Double = 2.0
   @Field val progressBase: Int = 0
   @Field val progressTotal: Int = 0
+  @Field val tokens: Int = 0
+  @Field val steps: Int = 0
 }
 
 class EdgeException(message: String, cause: Throwable? = null) :
@@ -87,18 +89,18 @@ class SwaramEdgeModule : Module() {
     }
 
     /** wav (24 kHz mono) -> log-mel written into out (frames * 100). Returns frames. */
-    AsyncFunction("computeMel") { wav: Float32Array, out: Float32Array ->
+    AsyncFunction("computeMel") { wav: Float32Array, wavLength: Int, out: Float32Array, outLength: Int ->
       synchronized(lock) {
         val e = env ?: throw EdgeException("Model not loaded")
         val session = mel ?: throw EdgeException("Model not loaded")
-        val input = readFloats(wav)
+        val input = readFloats(wav, wavLength)
         OnnxTensor.createTensor(e, FloatBuffer.wrap(input), longArrayOf(1, input.size.toLong())).use { t ->
           session.run(mapOf("wav" to t)).use { res ->
             val tensor = res[0] as OnnxTensor
             val frames = tensor.info.shape[1].toInt()
             val data = FloatArray(frames * N_MELS)
             tensor.floatBuffer.get(data)
-            if (out.length < data.size) throw EdgeException("Mel buffer too small")
+            if (outLength < data.size) throw EdgeException("Mel buffer too small")
             writeFloats(out, data)
             frames
           }
@@ -124,11 +126,12 @@ class SwaramEdgeModule : Module() {
         val stepSession = step ?: throw EdgeException("Model not loaded")
         val vocSession = vocoder ?: throw EdgeException("Model not loaded")
 
-        val tokenIds = LongArray(ids.length) { i -> ids[i].toLong() }
-        val condData = readFloats(cond)
-        val ts = readFloats(schedule)
-        val steps = ts.size - 1
-        val x = readFloats(noise)
+        val frameCount = duration * N_MELS
+        val tokenIds = readInts(ids, opts.tokens)
+        val condData = readFloats(cond, frameCount)
+        val ts = readFloats(schedule, opts.steps + 1)
+        val steps = opts.steps
+        val x = readFloats(noise, frameCount)
         val frameShape = longArrayOf(1, duration.toLong(), N_MELS.toLong())
 
         var t0 = SystemClock.elapsedRealtime()
@@ -177,7 +180,7 @@ class SwaramEdgeModule : Module() {
           }
         }
         val vocoderMs = SystemClock.elapsedRealtime() - t0
-        if (outWav.length < wav.size) throw EdgeException("Audio buffer too small (${outWav.length} < ${wav.size})")
+        if ((duration - refFrames) * 256 < wav.size) throw EdgeException("Audio buffer too small")
         writeFloats(outWav, wav)
         writeFloats(noise, x)
         mapOf(
@@ -202,15 +205,29 @@ class SwaramEdgeModule : Module() {
     vocoder = null
   }
 
-  private fun readFloats(array: Float32Array): FloatArray {
-    val buf = array.toDirectBuffer().order(ByteOrder.nativeOrder()).asFloatBuffer()
-    val out = FloatArray(array.length)
-    buf.get(out)
+  // Typed arrays are copied with read()/write(), which use the pointer taken
+  // on the JS thread. toDirectBuffer() and .length call into the JS runtime,
+  // which crashes the app when done from this background thread, so sizes
+  // come from JS as plain numbers.
+  private fun readFloats(array: Float32Array, count: Int): FloatArray {
+    val bytes = ByteArray(count * 4)
+    array.read(bytes, 0, bytes.size)
+    val out = FloatArray(count)
+    ByteBuffer.wrap(bytes).order(ByteOrder.nativeOrder()).asFloatBuffer().get(out)
     return out
   }
 
+  private fun readInts(array: Int32Array, count: Int): LongArray {
+    val bytes = ByteArray(count * 4)
+    array.read(bytes, 0, bytes.size)
+    val ints = IntArray(count)
+    ByteBuffer.wrap(bytes).order(ByteOrder.nativeOrder()).asIntBuffer().get(ints)
+    return LongArray(count) { ints[it].toLong() }
+  }
+
   private fun writeFloats(array: Float32Array, data: FloatArray) {
-    val buf: ByteBuffer = array.toDirectBuffer().order(ByteOrder.nativeOrder())
-    buf.asFloatBuffer().put(data)
+    val bytes = ByteArray(data.size * 4)
+    ByteBuffer.wrap(bytes).order(ByteOrder.nativeOrder()).asFloatBuffer().put(data)
+    array.write(bytes, 0, bytes.size)
   }
 }

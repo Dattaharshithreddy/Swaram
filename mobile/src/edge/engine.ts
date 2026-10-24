@@ -112,7 +112,7 @@ export class EdgeEngine {
     }
     const maxFrames = Math.floor(clip.length / HOP) + 1;
     const out = new Float32Array(maxFrames * N_MELS);
-    const frames = await native().computeMel(clip, out);
+    const frames = await native().computeMel(clip, clip.length, out, out.length);
     return {
       mel: out.slice(0, frames * N_MELS),
       frames,
@@ -150,6 +150,8 @@ export class EdgeEngine {
       cfg: opts.cfg,
       progressBase: progress.done,
       progressTotal: progress.total,
+      tokens: ids.length,
+      steps: opts.steps,
     });
     progress.done += opts.steps;
 
