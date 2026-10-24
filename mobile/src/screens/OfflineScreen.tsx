@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Body, Button, Card, Chip, Field, Label, Notice, Title } from '../components/ui';
 import { encodeWav, resample, SAMPLE_RATE } from '../edge/dsp';
+import { SwaramEdge } from '../../modules/swaram-edge';
 import { EdgeEngine, type Provider, type Timing } from '../edge/engine';
 import { prepareText } from '../edge/telugu';
 import {
@@ -49,6 +50,13 @@ export function OfflineScreen() {
   const [installed, setInstalled] = useState(modelInstalled());
   const [download, setDownload] = useState<{ bytes: number; total: number; file: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [crash] = useState<string | null>(() => {
+    try {
+      return SwaramEdge?.crashReport() ?? null;
+    } catch {
+      return null;
+    }
+  });
   const [provider, setProvider] = useState<Provider>('xnnpack');
   const [steps, setSteps] = useState(16);
   const [engineState, setEngineState] = useState<'idle' | 'loading' | 'ready'>('idle');
@@ -160,6 +168,15 @@ export function OfflineScreen() {
         Clones and speaks entirely on this phone. No server and no internet after a one-time download. Speed
         depends on your phone; the numbers below tell you exactly how fast it is.
       </Body>
+
+      {crash && (
+        <Card>
+          <Label>The app closed last time. Send a screenshot of this report:</Label>
+          <Text selectable style={{ fontFamily: 'monospace', fontSize: 11, color: t.ink }}>
+            {crash}
+          </Text>
+        </Card>
+      )}
 
       <Card>
         <Label>Model</Label>

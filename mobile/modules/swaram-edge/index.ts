@@ -4,12 +4,10 @@ export interface SynthOptions {
   duration: number;
   refFrames: number;
   cfg: number;
+  /** Seed for the starting noise. */
+  seed: number;
   progressBase: number;
   progressTotal: number;
-  /** ids.length */
-  tokens: number;
-  /** schedule.length - 1 */
-  steps: number;
 }
 
 export interface SynthTiming {
@@ -19,18 +17,17 @@ export interface SynthTiming {
   samples: number;
 }
 
+/**
+ * Audio and mels are passed as file paths holding little-endian float32
+ * values, so the native side never touches JS memory off the JS thread.
+ */
 export interface SwaramEdgeNative {
   load(dir: string, threads: number, provider: string): Promise<number>;
   release(): Promise<void>;
-  computeMel(wav: Float32Array, wavLength: number, out: Float32Array, outLength: number): Promise<number>;
-  synthesize(
-    ids: Int32Array,
-    cond: Float32Array,
-    schedule: Float32Array,
-    noise: Float32Array,
-    outWav: Float32Array,
-    opts: SynthOptions,
-  ): Promise<SynthTiming>;
+  computeMel(wavPath: string, melPath: string): Promise<number>;
+  synthesize(ids: number[], refMelPath: string, schedule: number[], outPath: string, opts: SynthOptions): Promise<SynthTiming>;
+  /** How the app last ended, if that was a crash (shown once); otherwise null. */
+  crashReport(): string | null;
   addListener(event: 'onProgress', listener: (e: { done: number; total: number }) => void): { remove(): void };
 }
 

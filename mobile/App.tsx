@@ -1,9 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { api, type VoiceProfile } from './src/api';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { runSelfTest } from './src/edge/selftest';
 import { OfflineScreen } from './src/screens/OfflineScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SpeakScreen } from './src/screens/SpeakScreen';
@@ -51,6 +52,16 @@ function Main() {
       setLoadingVoices(false);
     }
   }, [config]);
+
+  // swaram://selftest[?provider=cpu] runs the offline engine end to end (used by CI).
+  useEffect(() => {
+    void Linking.getInitialURL().then((url) => {
+      if (!url?.startsWith('swaram://selftest')) return;
+      const provider = /provider=(cpu|xnnpack|nnapi)/.exec(url)?.[1] as 'cpu' | 'xnnpack' | 'nnapi' | undefined;
+      setTab('offline');
+      void runSelfTest(provider ?? 'xnnpack');
+    });
+  }, []);
 
   useEffect(() => {
     if (loaded) void reloadVoices();

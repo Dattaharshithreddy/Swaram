@@ -7,9 +7,9 @@
  * the original model: text and duration rules here, the sampling loop in the
  * native module.
  */
-import type { Directory } from 'expo-file-system';
+import { type Directory, File, Paths } from 'expo-file-system';
 import { SwaramEdge } from '../../modules/swaram-edge';
-import { crossFade, gaussian, rms, SAMPLE_RATE, trimSilence, utf8Length } from './dsp';
+import { crossFade, rms, SAMPLE_RATE, trimSilence, utf8Length } from './dsp';
 
 const HOP = 256;
 const N_MELS = 100;
@@ -77,6 +77,22 @@ export function chunkText(text: string, maxBytes: number): string[] {
   return chunks;
 }
 
+function scratch(name: string): File {
+  const f = new File(Paths.cache, `swaram-edge-${name}`);
+  if (f.exists) f.delete();
+  return f;
+}
+
+function writeFloats(f: File, data: Float32Array) {
+  // Float32Array is little-endian on every Android device.
+  f.write(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+}
+
+async function readFloats(f: File): Promise<Float32Array> {
+  const bytes = await f.bytes();
+  return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+}
+
 function native() {
   if (!SwaramEdge) {
     throw new Error('This app build has no offline engine. Install the latest APK from GitHub Releases.');
@@ -91,7 +107,6 @@ export class EdgeEngine {
   ) {}
 
   static async load(dir: Directory, provider: Provider = 'xnnpack', threads = 4): Promise<EdgeEngine> {
-    const { File } = await import('expo-file-system');
     const ms = await native().load(dir.uri, threads, provider);
     const vocabList: string[] = JSON.parse(await new File(dir, 'vocab.json').text());
     const vocab = new Map(vocabList.map((tok, i) => [tok, i] as [string, number]));
@@ -110,20 +125,21 @@ export class EdgeEngine {
       const g = TARGET_RMS / level;
       clip = clip.map((s) => s * g);
     }
-    const maxFrames = Math.floor(clip.length / HOP) + 1;
-    const out = new Float32Array(maxFrames * N_MELS);
-    const frames = await native().computeMel(clip, clip.length, out, out.length);
+    const wavFile = scratch('ref.f32');
+    const melFile = scratch('ref.mel');
+    writeFloats(wavFile, clip);
+    const frames = await native().computeMel(wavFile.uri, melFile.uri);
+    const mel = await readFloats(melFile);
     return {
-      mel: out.slice(0, frames * N_MELS),
+      mel: mel.slice(0, frames * N_MELS),
       frames,
       text: normalizeRefText(refText),
       rms: level,
     };
   }
 
-  private tokens(text: string): Int32Array {
-    const chars = Array.from(text);
-    return Int32Array.from(chars, (c) => this.vocab.get(c) ?? 0);
+  private tokens(text: string): number[] {
+    return Array.from(text, (c) => this.vocab.get(c) ?? 0);
   }
 
   private async speakChunk(
@@ -132,6 +148,7 @@ export class EdgeEngine {
     opts: { steps: number; cfg: number; sway: number; speed: number },
     timing: Timing,
     progress: { done: number; total: number },
+    refMelUri: string,
   ) {
     const refFrames = voice.frames;
     const refBytes = Math.max(1, utf8Length(voice.text));
@@ -139,23 +156,18 @@ export class EdgeEngine {
     let duration = refFrames + Math.floor(((refFrames / refBytes) * utf8Length(text)) / opts.speed);
     duration = Math.min(Math.max(duration, Math.max(ids.length, refFrames) + 1), MAX_FRAMES);
 
-    const cond = new Float32Array(duration * N_MELS);
-    cond.set(voice.mel.subarray(0, refFrames * N_MELS), 0);
-    const x = gaussian(duration * N_MELS);
-    const wav = new Float32Array((duration - refFrames) * HOP);
-
-    const t = await native().synthesize(ids, cond, swaySchedule(opts.steps, opts.sway), x, wav, {
+    const outFile = scratch('out.f32');
+    const t = await native().synthesize(ids, refMelUri, Array.from(swaySchedule(opts.steps, opts.sway)), outFile.uri, {
       duration,
       refFrames,
       cfg: opts.cfg,
+      seed: Math.floor(Math.random() * 2 ** 31),
       progressBase: progress.done,
       progressTotal: progress.total,
-      tokens: ids.length,
-      steps: opts.steps,
     });
     progress.done += opts.steps;
 
-    let out = wav.subarray(0, t.samples);
+    let out = (await readFloats(outFile)).subarray(0, t.samples);
     if (voice.rms < TARGET_RMS) {
       const g = voice.rms / TARGET_RMS;
       out = out.map((s) => s * g);
@@ -185,8 +197,10 @@ export class EdgeEngine {
       ? native().addListener('onProgress', (e) => options.onProgress?.(e.done, e.total))
       : null;
     try {
+      const refMel = scratch('cond.mel');
+      writeFloats(refMel, voice.mel.subarray(0, voice.frames * N_MELS));
       const pieces: Float32Array[] = [];
-      for (const chunk of chunks) pieces.push(await this.speakChunk(voice, chunk, opts, timing, progress));
+      for (const chunk of chunks) pieces.push(await this.speakChunk(voice, chunk, opts, timing, progress, refMel.uri));
       return { wav: crossFade(pieces), timing };
     } finally {
       sub?.remove();
