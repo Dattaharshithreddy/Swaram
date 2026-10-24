@@ -54,7 +54,15 @@ jobs:
           GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
         # Signed with the debug key from the Expo template: fine for
         # installing directly, not for the Play Store (use EAS for that).
-        run: ./gradlew assembleRelease --no-daemon
+        run: |
+          set -o pipefail
+          if ! ./gradlew assembleRelease --no-daemon 2>&1 | tee gradle.log; then
+            # Surface the cause as annotations so it shows on the run page
+            # (and through the API) without opening the full log.
+            grep -E "What went wrong|^e: |error:|Could not|FAILED|> " gradle.log | grep -v "^> Task.*UP-TO-DATE\|^> Task.*NO-SOURCE\|^> Configure" | head -40 \
+              | while IFS= read -r line; do echo "::error title=Gradle::${line}"; done
+            exit 1
+          fi
 
       - name: Name the APK
         run: |
