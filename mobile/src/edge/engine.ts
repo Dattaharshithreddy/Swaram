@@ -85,7 +85,7 @@ function scratch(name: string): File {
 
 function writeFloats(f: File, data: Float32Array) {
   // Float32Array is little-endian on every Android device.
-  f.write(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+  f.writeSync(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
 }
 
 async function readFloats(f: File): Promise<Float32Array> {

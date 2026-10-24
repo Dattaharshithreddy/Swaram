@@ -69,7 +69,7 @@ export async function downloadModel(onProgress: (bytes: number, total: number, f
   const manifestText = await res.text();
   const manifest: Manifest = JSON.parse(manifestText);
   if (manifestFile.exists) manifestFile.delete();
-  manifestFile.write(manifestText);
+  manifestFile.writeSync(manifestText);
 
   const binaries = MODEL_FILES.filter((f) => f !== 'manifest.json');
   const total = binaries.reduce((s, n) => s + (manifest.files[n]?.bytes ?? 0), 0);
@@ -140,8 +140,8 @@ export function saveVoice(name: string, language: string, data: EdgeVoiceData): 
     frames: data.frames,
     createdAt: Date.now(),
   };
-  new File(dir, `${id}.mel`).write(new Uint8Array(data.mel.buffer, data.mel.byteOffset, data.mel.byteLength));
-  new File(dir, `${id}.json`).write(JSON.stringify(meta));
+  new File(dir, `${id}.mel`).writeSync(new Uint8Array(data.mel.buffer, data.mel.byteOffset, data.mel.byteLength));
+  new File(dir, `${id}.json`).writeSync(JSON.stringify(meta));
   return meta;
 }
 
@@ -161,6 +161,6 @@ export function deleteVoice(v: OfflineVoice): void {
 
 export function saveAudio(bytes: Uint8Array): File {
   const f = new File(Paths.document, `swaram-offline-${Date.now()}.wav`);
-  f.write(bytes);
+  f.writeSync(bytes);
   return f;
 }
