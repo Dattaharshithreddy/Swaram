@@ -24,6 +24,8 @@ Actions tab.)
 2. **Voices → Clone a new voice:** name, language, then record 5–12 seconds reading the sentence on screen. Tap *Fill in automatically*, fix the transcript so it matches the recording word for word, tick the consent box, *Create voice*.
 3. **Speak:** pick the voice, type the text in that language's script, *Generate*. Play it, or *Share* to WhatsApp, Drive and so on.
 
+**Offline tab (beta):** no server at all. Download the model once (~450 MB, from the `edge-model` release made by the "Edge model" workflow), record 5–12 seconds reading the sentence shown, and generate on the phone. After each run it shows how fast your phone is. See [edge/README.md](../edge/README.md).
+
 New voices use **IndicF5** for Indian languages and **Chatterbox** for English. Numbers, ₹ and % in Telugu are spelled out by the server, and the server's pronunciation glossary applies.
 
 ## Develop

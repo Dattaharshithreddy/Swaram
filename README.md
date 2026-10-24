@@ -29,6 +29,8 @@ on a rented cloud GPU and just records, uploads and plays audio.
 1. **Server:** rent an Ubuntu GPU machine and run one command. See [deploy/README.md](deploy/README.md).
 2. **App:** install the APK from Releases → "Swaram mobile (latest)", then enter the server URL and API key. See [mobile/README.md](mobile/README.md).
 
+**No server at all (beta):** the app's Offline tab runs a phone-optimised IndicF5 on the device itself. See [edge/README.md](edge/README.md) for how it works and current speed.
+
 On a public server, `SWARAM_API_KEY` must be sent with every request (`Authorization: Bearer <key>`). Without that variable the server stays open, as the local desktop app expects.
 
 ## Engines and languages

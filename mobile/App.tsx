@@ -3,17 +3,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { api, type VoiceProfile } from './src/api';
+import { OfflineScreen } from './src/screens/OfflineScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SpeakScreen } from './src/screens/SpeakScreen';
 import { VoicesScreen } from './src/screens/VoicesScreen';
 import { useServerConfig } from './src/settings';
 import { useTheme } from './src/theme';
 
-type Tab = 'speak' | 'voices' | 'settings';
+type Tab = 'speak' | 'voices' | 'offline' | 'settings';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'speak', label: 'Speak' },
   { key: 'voices', label: 'Voices' },
+  { key: 'offline', label: 'Offline' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -80,6 +82,7 @@ function Main() {
               reload={reloadVoices}
             />
           )}
+          {tab === 'offline' && <OfflineScreen />}
           {tab === 'settings' && <SettingsScreen config={config} onSave={save} />}
         </View>
       </KeyboardAvoidingView>

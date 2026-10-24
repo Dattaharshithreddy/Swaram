@@ -1,0 +1,18 @@
+# Install torch first (CPU build is enough):
+#   pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+# and put a clone of https://github.com/AI4Bharat/IndicF5 on PYTHONPATH.
+onnx>=1.17
+onnxruntime>=1.20
+onnxscript>=0.2
+numpy>=1.24,<2.3
+safetensors
+huggingface_hub
+vocos==0.1.0
+x-transformers>=1.31.14
+torchdiffeq
+einops
+librosa
+soundfile
+jieba
+pypinyin
+pytest

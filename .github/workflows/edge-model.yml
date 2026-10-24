@@ -1,0 +1,109 @@
+name: Edge model (offline phone voice)
+
+# Converts IndicF5 into the four small ONNX graphs the phone runs offline,
+# checks them against the original model, measures speed, renders sample
+# Telugu audio, and publishes the phone files to the "edge-model" release.
+#
+# One-time setup: add your Hugging Face token (with access to
+# https://huggingface.co/ai4bharat/IndicF5) as a repository secret named
+# HF_TOKEN: Settings -> Secrets and variables -> Actions -> New repository secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Step counts to benchmark (comma separated)"
+        default: "8,16,32"
+      publish:
+        description: "Publish the phone model files to the edge-model release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: edge-model
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PYTHONPATH: ${{ github.workspace }}/edge:${{ github.workspace }}/IndicF5
+      OUT: ${{ github.workspace }}/build/edge
+      BENCH: ${{ github.workspace }}/build/bench
+    steps:
+      - name: Check the Hugging Face token
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::Add a repository secret named HF_TOKEN (Settings -> Secrets and variables -> Actions). The token's account must have accepted the terms at https://huggingface.co/ai4bharat/IndicF5."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: edge/requirements.txt
+
+      - name: Install
+        run: |
+          pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r edge/requirements.txt
+          git clone --depth 1 https://github.com/AI4Bharat/IndicF5.git IndicF5
+
+      - name: Parity tests (phone pipeline == original IndicF5 code)
+        run: cd edge && pytest -q tests
+
+      - name: Export IndicF5 to ONNX
+        run: cd edge && python -m swaram_edge.export --hf --out "$OUT"
+
+      - name: Benchmark and render samples
+        run: |
+          cd edge
+          python -m swaram_edge.benchmark "$OUT" \
+            --ref ../IndicF5/prompts/PAN_F_HAPPY_00001.wav \
+            --ref-text "ਭਹੰਪੀ ਵਿੱਚ ਸਮਾਰਕਾਂ ਦੇ ਭਵਨ ਨਿਰਮਾਣ ਕਲਾ ਦੇ ਵੇਰਵੇ ਗੁੰਝਲਦਾਰ ਅਤੇ ਹੈਰਾਨ ਕਰਨ ਵਾਲੇ ਹਨ, ਜੋ ਮੈਨੂੰ ਖੁਸ਼ ਕਰਦੇ  ਹਨ।" \
+            --steps "${{ inputs.steps }}" --precision int8,fp32 --out "$BENCH" | tee "$BENCH.txt"
+          {
+            echo "## Speed on a GitHub runner CPU"
+            echo '```'
+            cat "$BENCH.txt"
+            echo '```'
+            echo "RTF = seconds of compute per second of audio (below 1.0 = faster than real time)."
+            echo "Listen to the samples in the edge-bench artifact before trusting a step count."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edge-bench
+          path: build/bench
+
+      - name: Publish phone files
+        if: ${{ inputs.publish }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: edge-model
+          name: Swaram edge model (offline phone voice)
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          body: |
+            IndicF5 (AI4Bharat, MIT) and Vocos (MIT) converted for phones by the
+            "Edge model" workflow from ${{ github.sha }}. The Swaram app's Offline
+            mode downloads these files once (about 450 MB).
+          files: |
+            build/edge/manifest.json
+            build/edge/vocab.json
+            build/edge/mel.onnx
+            build/edge/context.onnx
+            build/edge/step.int8.onnx
+            build/edge/vocoder.onnx
