@@ -59,8 +59,12 @@ jobs:
           if ! ./gradlew assembleRelease --no-daemon 2>&1 | tee gradle.log; then
             # Surface the cause as annotations so it shows on the run page
             # (and through the API) without opening the full log.
-            grep -E "What went wrong|^e: |error:|Could not|FAILED|> " gradle.log | grep -v "^> Task.*UP-TO-DATE\|^> Task.*NO-SOURCE\|^> Configure" | head -40 \
-              | while IFS= read -r line; do echo "::error title=Gradle::${line}"; done
+            # GitHub keeps only 10 annotations per step, so send one message
+            # with the "What went wrong" block and compiler errors in it.
+            { awk '/What went wrong/{p=1} /\* Try:/{p=0} p' gradle.log
+              grep -E "^e: |error:|FAILED" gradle.log | grep -v "^> Task.*UP-TO-DATE"; } \
+              | head -60 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g' > summary.txt
+            echo "::error title=Gradle build failed::$(cat summary.txt)"
             exit 1
           fi
 
