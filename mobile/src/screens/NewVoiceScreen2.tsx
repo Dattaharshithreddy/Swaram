@@ -1,7 +1,7 @@
 import { requestRecordingPermissionsAsync, setAudioModeAsync, useAudioStream } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 import { CleanNoise } from '../components/CleanNoise';
 import { usePlayer } from '../components/player';
 import { ReadAs } from '../components/ReadAs';
@@ -162,6 +162,7 @@ export function NewVoiceScreen2() {
       app.refreshVoices();
       app.setPage(null);
       app.setTab('voices');
+      Alert.alert('Voice added', `"${name.trim()}" is ready. Pick it in Home or Studio and type anything.`);
     } catch (e) {
       setError(friendlyError(e));
     } finally {
@@ -172,6 +173,12 @@ export function NewVoiceScreen2() {
   const clipSeconds = clip ? clip.length / SAMPLE_RATE : seconds;
   const lengthOk = clipSeconds >= 4 && clipSeconds <= 10;
   const playing = clipUri ? player.isPlaying(clipUri) : false;
+  const missing = [
+    !name.trim() && 'type a name',
+    !clip && (source === 'mic' ? 'record yourself reading the line' : 'choose a recording'),
+    !transcript.trim() && 'type what is said',
+    !consent && 'tick the permission box',
+  ].filter((m): m is string => !!m);
 
   return (
     <Screen>
@@ -267,11 +274,12 @@ export function NewVoiceScreen2() {
         </View>
         <Body style={{ flex: 1, color: t.chipText }}>This is my own voice, or the speaker gave me written permission to clone it.</Body>
       </Pressable>
-      <Button title="Create voice" icon="check" onPress={create} busy={busy} disabled={!clip || !name.trim() || !transcript.trim() || !consent || isStreaming} />
+      {missing.length > 0 && !busy && <Notice text={`To create the voice: ${missing.join(', ')}.`} />}
+      {error && <Notice text={error} kind="error" />}
+      <Button title={busy ? 'Creating voice… (about 20 s)' : 'Create voice'} icon="check" onPress={create} busy={busy} disabled={missing.length > 0 || isStreaming} />
       <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12, textAlign: 'center' }}>
         Saved only on this phone. You can make it ⚡ fast later from the Voices tab.
       </Text>
-      {error && <Notice text={error} kind="error" />}
       <View style={{ height: radius.lg }} />
       {lang ? null : null}
     </Screen>

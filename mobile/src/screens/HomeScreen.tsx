@@ -156,7 +156,7 @@ export function HomeScreen() {
             value={text}
             onChangeText={setText}
             multiline
-            placeholder={lang?.example || 'Type what the voice should say'}
+            placeholder={lang?.example ? `Type here, e.g. ${lang.example}` : 'Type what the voice should say'}
             placeholderTextColor={t.faint}
             accessibilityLabel="Text to speak"
             style={{ minHeight: 96, maxHeight: 220, textAlignVertical: 'top', borderRadius: radius.md, borderWidth: 1, borderColor: t.lineStrong, backgroundColor: t.field, color: t.ink, padding: 12, fontSize: 16, lineHeight: 26 }}
@@ -199,6 +199,9 @@ export function HomeScreen() {
                   <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12 }}>{hours.toFixed(1)} h of about 4 h</Text>
                 </View>
                 <ProgressBar value={Math.min(0.97, hours / 4)} color={t.gold} />
+                <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12 }}>
+                  When it finishes, "⚡ {tr.voiceName}" appears as a new voice. Your normal "{tr.voiceName}" works meanwhile.
+                </Text>
               </View>
             );
           })}
