@@ -60,6 +60,29 @@ function partWav(job: ScriptJob, i: number): Promise<string> {
   });
 }
 
+/** The finished lines from the start (up to the first one not made yet), joined with their pauses. */
+async function doneSoFarWav(job: ScriptJob): Promise<{ uri: string; lines: number } | null> {
+  const pieces: Float32Array[] = [];
+  let lines = 0;
+  for (let i = 0; i < job.parts.length && partFile(job, i).exists; i++) {
+    pieces.push(await readFloats(partFile(job, i)));
+    const pause = job.parts[i].pauseAfter ?? 0;
+    if (pause > 0) pieces.push(new Float32Array(Math.round(pause * 24000)));
+    lines++;
+  }
+  if (!lines) return null;
+  const all = new Float32Array(pieces.reduce((n, x) => n + x.length, 0));
+  let o = 0;
+  for (const x of pieces) {
+    all.set(x, o);
+    o += x.length;
+  }
+  const f = new File(Paths.cache, `swaram-sofar-${job.id}.wav`);
+  if (f.exists) f.delete();
+  f.writeSync(encodeWav(all));
+  return { uri: f.uri, lines };
+}
+
 export function StudioScreen() {
   const t = useTheme();
   const app = useApp();
@@ -578,6 +601,9 @@ function JobLines({ job }: { job: ScriptJob }) {
   const [emoPicker, setEmoPicker] = useState<number | null>(null);
   const [, setTick] = useState(0);
   const isRunning = app.running?.job.id === job.id;
+  const [soFarUri, setSoFarUri] = useState<string | null>(null);
+  const soFarPlaying = soFarUri ? player.isPlaying(soFarUri) : false;
+  const firstMissing = job.parts.findIndex((_, i) => !partFile(job, i).exists);
   const speakers = [...new Set(job.parts.map((p) => p.speaker).filter(Boolean))] as string[];
 
   async function redo(i: number, text?: string) {
@@ -598,9 +624,28 @@ function JobLines({ job }: { job: ScriptJob }) {
 
   return (
     <View style={{ gap: space.sm }}>
-      <Notice text="Tap a line to hear it. Redo makes just that line again; the rest is kept." />
+      <Notice text={isRunning ? 'You can play lines as soon as they finish; no need to wait for all of them.' : 'Tap Play to hear a line. Redo makes just that line again; the rest is kept.'} />
+      {isRunning && partFile(job, 0).exists && (
+        <Button
+          title={soFarPlaying ? 'Pause' : 'Play everything finished so far'}
+          icon={soFarPlaying ? 'pause' : 'play'}
+          kind="secondary"
+          onPress={async () => {
+            if (soFarPlaying && soFarUri) {
+              await player.toggle(soFarUri);
+              return;
+            }
+            const r = await doneSoFarWav(job);
+            if (r) {
+              setSoFarUri(r.uri);
+              await player.toggle(r.uri);
+            }
+          }}
+        />
+      )}
       {job.parts.map((p, i) => {
         const has = partFile(job, i).exists;
+        const making = isRunning && !has && i === firstMissing;
         const color = p.speaker ? speakerColors[speakers.indexOf(p.speaker) % speakerColors.length] : t.soft;
         return (
           <View key={i} style={{ flexDirection: 'row', gap: 10, backgroundColor: t.bg, borderRadius: 12, padding: 10 }}>
@@ -614,6 +659,9 @@ function JobLines({ job }: { job: ScriptJob }) {
               <Pressable accessibilityRole="button" accessibilityLabel="Change emotion" onPress={() => setEmoPicker(i)} disabled={isRunning} style={{ alignSelf: 'flex-start' }}>
                 <Badge text={p.emotion ? EMOTION_INFO[p.emotion].label : 'Normal tone'} kind={p.emotion ? 'gold' : 'plain'} icon="smile" />
               </Pressable>
+              {isRunning && (
+                <Badge text={has ? 'Ready' : making ? 'Making now…' : 'Waiting'} kind={has ? 'ok' : making ? 'gold' : 'plain'} icon={has ? 'check' : making ? 'loader' : 'clock'} />
+              )}
               {editing?.i === i ? (
                 <TextInput
                   value={editing.text}
