@@ -9,6 +9,8 @@
  * sh is శ. The screens show the result so it can be corrected before speaking.
  */
 
+import { englishToTelugu } from './englishWords';
+
 const WORDS: Record<string, string> = {
   // People and greetings
   hi: 'హాయ్', hello: 'హలో', hai: 'హాయ్', bye: 'బై', ok: 'ఓకే', okay: 'ఓకే', sorry: 'సారీ', please: 'ప్లీజ్',
@@ -29,7 +31,7 @@ const WORDS: Record<string, string> = {
   entha: 'ఎంత', yentha: 'ఎంత', enta: 'ఎంత', ye: 'ఏ', ee: 'ఈ', aa: 'ఆ',
   // Common verbs and words
   peru: 'పేరు', unnanu: 'ఉన్నాను', unnaru: 'ఉన్నారు', unnavu: 'ఉన్నావు', unnav: 'ఉన్నావ్',
-  unnara: 'ఉన్నారా', unnava: 'ఉన్నావా', undi: 'ఉంది', unnadi: 'ఉన్నది', bagunnanu: 'బాగున్నాను',
+  unnara: 'ఉన్నారా', unnava: 'ఉన్నావా', undi: 'ఉంది', unnadi: 'ఉన్నది', bagunnanu: 'బాగున్నాను', baagunnanu: 'బాగున్నాను',
   bagunnara: 'బాగున్నారా', bagunnava: 'బాగున్నావా', bagundi: 'బాగుంది', baagundi: 'బాగుంది', bagunna: 'బాగున్నా',
   baga: 'బాగా', baaga: 'బాగా', chala: 'చాలా', chaala: 'చాలా', manchi: 'మంచి', pedda: 'పెద్ద', chinna: 'చిన్న',
   ledu: 'లేదు', ledhu: 'లేదు', kaadu: 'కాదు', kadu: 'కాదు', avunu: 'అవును', haa: 'హా', sare: 'సరే', saare: 'సరే',
@@ -46,7 +48,7 @@ const WORDS: Record<string, string> = {
   teliyadu: 'తెలియదు', kavali: 'కావాలి', kaavali: 'కావాలి', vaddu: 'వద్దు', istam: 'ఇష్టం', ishtam: 'ఇష్టం',
   prema: 'ప్రేమ', santosham: 'సంతోషం', baadha: 'బాధ', badha: 'బాధ', bhayam: 'భయం', dabbulu: 'డబ్బులు',
   dabbu: 'డబ్బు', rupayalu: 'రూపాయలు', ooru: 'ఊరు', uru: 'ఊరు', desam: 'దేశం', bhasha: 'భాష', video: 'వీడియో',
-  channel: 'ఛానల్', subscribe: 'సబ్‌స్క్రైబ్', like: 'లైక్', share: 'షేర్', andaru: 'అందరు', andariki: 'అందరికీ',
+  channel: 'ఛానల్', subscribe: 'సబ్స్క్రైబ్', like: 'లైక్', share: 'షేర్', andaru: 'అందరు', andariki: 'అందరికీ',
   andi: 'అండి', garu: 'గారు', gaaru: 'గారు', kuda: 'కూడా', kooda: 'కూడా', inka: 'ఇంకా', mari: 'మరి',
   kani: 'కానీ', kaani: 'కానీ', ante: 'అంటే', mundu: 'ముందు', taruvata: 'తరువాత', tarvata: 'తర్వాత',
   modati: 'మొదటి', okka: 'ఒక్క', oka: 'ఒక', okati: 'ఒకటి', rendu: 'రెండు', moodu: 'మూడు', nalugu: 'నాలుగు',
@@ -54,6 +56,12 @@ const WORDS: Record<string, string> = {
   vijayawada: 'విజయవాడ', guntur: 'గుంటూరు', tirupati: 'తిరుపతి', warangal: 'వరంగల్', india: 'ఇండియా',
   bharat: 'భారత్', andhra: 'ఆంధ్ర', telangana: 'తెలంగాణ', pradesh: 'ప్రదేశ్',
   mana: 'మన', ani: 'అని', antaru: 'అంటారు', antunnaru: 'అంటున్నారు',
+  // Particles and endings that are also English dictionary words
+  lo: 'లో', ki: 'కి', ku: 'కు', nu: 'ను', ga: 'గా', tho: 'తో', tha: 'త', kosam: 'కోసం', gurinchi: 'గురించి',
+  kada: 'కదా', kadha: 'కదా', ayindi: 'అయింది', ayyindi: 'అయ్యింది', emo: 'ఏమో', untundi: 'ఉంటుంది',
+  untayi: 'ఉంటాయి', vachindi: 'వచ్చింది', poyindi: 'పోయింది', chusi: 'చూసి', chudandi: 'చూడండి',
+  vinandi: 'వినండి', cheptha: 'చెప్తా', chepta: 'చెప్తా', anni: 'అన్ని', antha: 'అంత', intha: 'ఇంత',
+  vere: 'వేరే', ide: 'ఇదే', ade: 'అదే', ala: 'అలా', ila: 'ఇలా', aithe: 'అయితే', ayithe: 'అయితే',
 };
 
 type Unit = { key: string; cons?: string; indep?: string; matra?: string };
@@ -144,11 +152,20 @@ function normaliseCase(word: string): string {
   return word;
 }
 
+/**
+ * When the text already has Telugu script, English-letter words are English
+ * ("Space లో satellites") and are spelled as Telugu speakers say them. In
+ * all-English-letter text they're usually Telugu typed in English, so only
+ * common English words are treated as English there.
+ */
 export function romanToTelugu(text: string): string {
-  return text.replace(/[A-Za-z]+/g, (raw) => {
+  const mixed = /[\u0C00-\u0C7F]/.test(text);
+  return text.replace(/[A-Za-z]+(?:'[A-Za-z]+)?/g, (raw) => {
     const known = WORDS[raw.toLowerCase()];
     if (known) return known;
-    return ruleWord(normaliseCase(raw));
+    const english = englishToTelugu(raw.replace(/'/g, ''), !mixed);
+    if (english) return english;
+    return ruleWord(normaliseCase(raw.replace(/'/g, '')));
   });
 }
 

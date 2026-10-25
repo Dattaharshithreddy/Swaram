@@ -73,6 +73,10 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     const reloaded = await loadVoiceData(saved);
     log(`voice saved and reloaded frames=${reloaded.frames}`);
 
+    // English words inside Telugu are spelled the way Telugu speakers say them.
+    const mixed = spokenText('Space లో satellites తిరుగుతాయి, gravity ఉండదు.', 'te');
+    if (mixed !== 'స్పేస్ లో శాటిలైట్స్ తిరుగుతాయి, గ్రావిటీ ఉండదు.') throw new Error(`english words: ${mixed}`);
+    log(`english words ok: ${mixed}`);
     const t0 = Date.now();
     const { wav, timing } = await engine.speak(reloaded, prepareText(spokenText('Idi oka pariksha. 25 rupayalu.', 'te'), 'te'), {
       steps: 4,
