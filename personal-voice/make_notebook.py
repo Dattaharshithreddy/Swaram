@@ -29,16 +29,17 @@ VOICE_NAME = ""       # leave empty to use the name from the app
 REF_TEXT = ""         # only if you uploaded a plain audio file instead of the app's export"""),
     ("code", f"""# 1. Setup (about 5 minutes)
 import os, subprocess, sys, glob, json, shlex, zipfile
-from kaggle_secrets import UserSecretsClient
 
-os.environ["HF_TOKEN"] = UserSecretsClient().get_secret("HF_TOKEN")
+if not os.environ.get("HF_TOKEN"):  # the app passes it directly; by hand it's a Kaggle secret
+    from kaggle_secrets import UserSecretsClient
+    os.environ["HF_TOKEN"] = UserSecretsClient().get_secret("HF_TOKEN")
 WORK = "/tmp/swaram"          # big intermediate files (not kept)
 OUT = "/kaggle/working/output" # what you download
 os.makedirs(WORK, exist_ok=True); os.makedirs(OUT, exist_ok=True)
 
 def sh(cmd):
     print("$", cmd, flush=True)
-    subprocess.run(cmd, shell=True, check=True)
+    subprocess.run(f"set -o pipefail; {{cmd}}", shell=True, check=True, executable="/bin/bash")
 
 sh(f"git clone -q --depth 1 https://github.com/Dattaharshithreddy/Swaram.git {{WORK}}/Swaram || true")
 sh(f"git clone -q --depth 1 https://github.com/AI4Bharat/IndicF5.git {{WORK}}/IndicF5 || true")
@@ -52,8 +53,13 @@ os.environ["PYTHONPATH"] = f"{{WORK}}/IndicF5:{{WORK}}/Swaram/edge"
 import torch; print("GPUs:", torch.cuda.device_count())
 assert torch.cuda.is_available(), "Turn on the GPU: Settings -> Accelerator -> GPU T4 x2"
 """),
-    ("code", """# 2. Find the voice you uploaded
+    ("code", """# 2. Find the voice you uploaded (or the one the app sent)
 ref_wav, ref_text, name = None, REF_TEXT, VOICE_NAME
+if "APP_VOICE" in globals():
+    import base64
+    os.makedirs(f"{WORK}/voice", exist_ok=True)
+    open(f"{WORK}/voice/ref.wav", "wb").write(base64.b64decode(APP_VOICE["wav_base64"]))
+    json.dump({k: v for k, v in APP_VOICE.items() if k != "wav_base64"} | {"audio": "ref.wav"}, open(f"{WORK}/voice/voice.json", "w"))
 for z in glob.glob("/kaggle/input/**/*.zip", recursive=True):
     with zipfile.ZipFile(z) as f:
         f.extractall(f"{WORK}/voice")

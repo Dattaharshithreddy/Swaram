@@ -60,16 +60,25 @@ jobs:
           mkdir -p $WORK
           cp ../IndicF5/prompts/PAN_F_HAPPY_00001.wav $WORK/ref.wav
           python make_sentences.py $WORK/data 6
+          set -o pipefail
           python generate.py --ref $WORK/ref.wav \
             --ref-text "ਭਹੰਪੀ ਵਿੱਚ ਸਮਾਰਕਾਂ ਦੇ ਭਵਨ ਨਿਰਮਾਣ ਕਲਾ ਦੇ ਵੇਰਵੇ ਗੁੰਝਲਦਾਰ ਅਤੇ ਹੈਰਾਨ ਕਰਨ ਵਾਲੇ ਹਨ, ਜੋ ਮੈਨੂੰ ਖੁਸ਼ ਕਰਦੇ  ਹਨ।" \
             --out $WORK/data --steps 8 --batch 3
           python dataset.py $WORK/data
       - name: Fine-tune Piper's Telugu voice for a few steps
         working-directory: personal-voice
-        run: python train.py --data $WORK/data --piper ../piper --out $WORK/train --batch 2 --max-steps 3 --cpu 2>&1 | grep -v Warning | tail -20
+        run: |
+          set -o pipefail
+          if ! python train.py --data $WORK/data --piper ../piper --out $WORK/train --batch 2 --max-steps 3 --cpu > $WORK/train.log 2>&1; then
+            grep -v Warning $WORK/train.log | tail -40
+            echo "::error title=Training failed::$(grep -v -i warn $WORK/train.log | tail -25 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+            exit 1
+          fi
+          grep -v Warning $WORK/train.log | tail -15
       - name: Package for the app
         working-directory: personal-voice
         run: |
+          set -o pipefail
           python package.py --train $WORK/train --piper ../piper --name "CI test" --out $WORK/output 2>&1 | tee $WORK/package.txt
           echo "::notice title=Personal voice pipeline::$(tail -5 $WORK/package.txt | tr '\n' ' ')"
       - uses: actions/upload-artifact@v4

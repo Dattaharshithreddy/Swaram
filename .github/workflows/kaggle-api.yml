@@ -1,0 +1,33 @@
+name: Kaggle API check
+
+# Runs mobile/src/edge/kaggle.ts (the app's Kaggle client) against the real
+# Kaggle API with a tiny CPU notebook. Needs repository secrets
+# KAGGLE_USERNAME and KAGGLE_API_TOKEN; skips without them.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/src/edge/kaggle.ts"
+      - "mobile/scripts/kaggle-api-test.ts"
+      - ".github/workflows/kaggle-api.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Push, run and read back a tiny notebook
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -o pipefail
+          node --experimental-strip-types scripts/kaggle-api-test.ts 2>&1 | tee out.txt
+          echo "::notice title=Kaggle API check::$(grep -v Warning out.txt | tail -8 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
