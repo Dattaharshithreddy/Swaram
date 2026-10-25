@@ -11,6 +11,7 @@ import {
   f5Maker,
   fastMaker,
   type JobProgress,
+  withGain,
   listJobs,
   type MakeOptions,
   outputFile,
@@ -30,13 +31,15 @@ import {
 import { FastVoice, type PersonalVoice } from './edge/personal';
 import { applyPronunciations, getPrefs, type Prefs, setPrefs } from './edge/prefs';
 import { addRecent, listRecent, type RecentItem } from './edge/recent';
-import { loadVoiceData, modelDir, modelInstalled, saveAudio } from './edge/store';
+import { loadEmotionData, loadVoiceData, modelDir, modelInstalled, saveAudio } from './edge/store';
+import { type Emotion, EMOTION_STYLE } from './edge/emotions';
+import { parseScript } from './edge/script';
 import { prepareText } from './edge/telugu';
 import { displayName, keyOf, listAllVoices, type VoiceRef } from './edge/voices';
 import { spokenText } from './translit';
 
 export type Tab = 'home' | 'studio' | 'voices' | 'settings';
-export type Page = { name: 'newVoice' } | { name: 'server' } | null;
+export type Page = { name: 'newVoice' } | { name: 'server' } | { name: 'emotion'; voiceId: string } | null;
 
 /** Big-model guidance per quality preset (share of steps with guidance). */
 export const QUALITY = [
@@ -161,20 +164,33 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
   const makerFor = useCallback(
     (opts: MakeOptions): MakerFor => {
       const cache = new Map<string, PartMaker>();
-      return async (key: string) => {
-        const hit = cache.get(key);
+      return async (key: string, emotion?: Emotion | null) => {
+        const cacheKey = `${key}|${emotion ?? ''}`;
+        const hit = cache.get(cacheKey);
         if (hit) return hit;
         const ref = listAllVoices().find((r) => keyOf(r) === key);
         if (!ref) throw new Error('A voice in this script was deleted. Pick another voice for its lines.');
+        // A line with an emotion uses the voice's recording in that tone; without one,
+        // speed and loudness are adjusted instead (EMOTION_STYLE).
+        const style = emotion ? EMOTION_STYLE[emotion] : null;
         let maker: PartMaker;
         if (ref.kind === 'fast') {
-          maker = fastMaker(await getFast(ref.voice), opts.speed);
+          const fv = await getFast(ref.voice);
+          maker = fv.knows(emotion)
+            ? fastMaker(fv, opts.speed, emotion)
+            : withGain(fastMaker(fv, opts.speed * (style?.speed ?? 1)), style?.gain ?? 1);
         } else {
           if (!modelInstalled()) throw new Error('Download the offline model in Settings to use big-model voices.');
           const eng = await getEngine();
-          maker = f5Maker(eng, await loadVoiceData(ref.voice), opts, `cond-${ref.voice.id}`);
+          const take = emotion ? await loadEmotionData(ref.voice, emotion) : null;
+          maker = take
+            ? f5Maker(eng, take, opts, `cond-${ref.voice.id}-${emotion}`)
+            : withGain(
+                f5Maker(eng, await loadVoiceData(ref.voice), { ...opts, speed: opts.speed * (style?.speed ?? 1) }, `cond-${ref.voice.id}`),
+                style?.gain ?? 1,
+              );
         }
-        cache.set(key, maker);
+        cache.set(cacheKey, maker);
         return maker;
       };
     },
@@ -190,24 +206,34 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
     async (ref: VoiceRef, text: string, onProgress?: (done: number, total: number) => void) => {
       const p = getPrefs();
       const opts = { steps: p.steps, guidance: guidanceFor(p.steps), speed: p.speed };
-      const prepared = prepare(text.trim(), ref.voice.language);
-      const parts = ref.kind === 'fast' ? chunkText(prepared, 400) : chunksFor(ref.voice, prepared);
-      const maker = await makerFor(opts)(keyOf(ref));
+      // Quick speak understands the same [happy] / [pause 2s] tags as Studio (one voice).
+      const pieces: { text: string; emotion: Emotion | null; pause: number }[] = [];
+      for (const seg of parseScript(text)) {
+        const prepared = prepare(seg.text, ref.voice.language);
+        const chunks = (ref.kind === 'fast' ? chunkText(prepared, 400) : chunksFor(ref.voice, prepared)).filter((c) => c.trim());
+        chunks.forEach((c, i) =>
+          pieces.push({ text: c, emotion: seg.emotion, pause: i === chunks.length - 1 ? seg.pauseAfter * (seg.emotion ? EMOTION_STYLE[seg.emotion].pause : 1) : 0 }),
+        );
+      }
+      if (!pieces.length) throw new Error('Type something to speak.');
+      const makers = makerFor(opts);
       const perPart = ref.kind === 'fast' ? 1 : opts.steps;
-      const progress = { done: 0, total: parts.length * perPart };
+      const progress = { done: 0, total: pieces.length * perPart };
       const sub = onProgress && SwaramEdge ? SwaramEdge.addListener('onProgress', (e) => onProgress(e.done, e.total)) : null;
       try {
-        const pieces: Float32Array[] = [];
-        for (let i = 0; i < parts.length; i++) {
+        const audio: Float32Array[] = [];
+        for (let i = 0; i < pieces.length; i++) {
           progress.done = i * perPart;
-          pieces.push(await maker(parts[i], progress));
+          const maker = await makers(keyOf(ref), pieces[i].emotion);
+          audio.push(await maker(pieces[i].text, progress));
+          if (pieces[i].pause > 0) audio.push(new Float32Array(Math.round(pieces[i].pause * SAMPLE_RATE)));
           onProgress?.((i + 1) * perPart, progress.total);
         }
-        const wav = ref.kind === 'fast' ? crossFade(pieces, 0.05) : crossFade(pieces);
+        const wav = ref.kind === 'fast' ? crossFade(audio, 0.05) : crossFade(audio);
         const file = saveAudio(encodeWav(wav));
         const item = addRecent({
           uri: file.uri,
-          title: text.trim().split(/\s+/).slice(0, 10).join(' '),
+          title: text.replace(/\[[^\]]*\]/g, ' ').trim().split(/\s+/).slice(0, 10).join(' '),
           voiceName: displayName(ref),
           seconds: wav.length / SAMPLE_RATE,
         });

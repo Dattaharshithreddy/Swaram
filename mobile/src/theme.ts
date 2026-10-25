@@ -1,30 +1,31 @@
 /**
- * Swaram's studio palette: deep ink, coral accent, gold for ⚡ fast voices.
+ * Swaram's studio palette: deep indigo, lavender accent, gold for ⚡ fast voices.
  * One dark theme on purpose (an audio studio, and it keeps contrast checked
  * in one place). Token names stay stable across the app.
  */
 const studio = {
-  bg: '#0E0F1A',
-  surface: '#171929',
-  surface2: '#1F2236',
-  field: '#0E0F1A',
-  ink: '#F2F2F7',
-  soft: '#A3A7C2',
-  faint: '#8C90AB',
-  line: '#262A40',
-  lineStrong: '#2E3350',
-  accent: '#F2737B',
-  onAccent: '#1B0A0C',
-  tint: '#2A1A1E',
+  bg: '#100E24',
+  surface: '#1C1844',
+  surface2: '#262158',
+  field: '#120F2C',
+  ink: '#F1EFFF',
+  soft: '#B4AEDB',
+  faint: '#8E88BF',
+  line: '#2E2866',
+  lineStrong: '#3B3485',
+  accent: '#A99CF5',
+  onAccent: '#14102E',
+  tint: '#2A2462',
   gold: '#F5B544',
-  goldText: '#F5C46B',
-  goldBg: '#2A2213',
+  goldText: '#F7C86E',
+  goldBg: '#2E2615',
   ok: '#7EE2A8',
-  okBg: '#13261E',
+  okBg: '#14302A',
   danger: '#FF9AA0',
-  dangerLine: '#4A2A30',
+  dangerLine: '#5A2F45',
   turmeric: '#F5C351',
-  tab: '#12131F',
+  tab: '#141130',
+  chipText: '#D2CDF2',
 };
 
 export type Theme = typeof studio;

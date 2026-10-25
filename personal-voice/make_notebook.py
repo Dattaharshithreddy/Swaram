@@ -55,11 +55,17 @@ assert torch.cuda.is_available(), "Turn on the GPU: Settings -> Accelerator -> G
 """),
     ("code", """# 2. Find the voice you uploaded (or the one the app sent)
 ref_wav, ref_text, name = None, REF_TEXT, VOICE_NAME
+emotion_refs = {}
 if "APP_VOICE" in globals():
     import base64
     os.makedirs(f"{WORK}/voice", exist_ok=True)
     open(f"{WORK}/voice/ref.wav", "wb").write(base64.b64decode(APP_VOICE["wav_base64"]))
-    json.dump({k: v for k, v in APP_VOICE.items() if k != "wav_base64"} | {"audio": "ref.wav"}, open(f"{WORK}/voice/voice.json", "w"))
+    emos = {}
+    for e, v in (APP_VOICE.get("emotions") or {}).items():
+        open(f"{WORK}/voice/emo-{e}.wav", "wb").write(base64.b64decode(v["wav_base64"]))
+        emos[e] = {"audio": f"emo-{e}.wav", "text": v["text"]}
+    meta = {k: v for k, v in APP_VOICE.items() if k not in ("wav_base64", "emotions")}
+    json.dump(meta | {"audio": "ref.wav", "emotions": emos}, open(f"{WORK}/voice/voice.json", "w"))
 for z in glob.glob("/kaggle/input/**/*.zip", recursive=True):
     with zipfile.ZipFile(z) as f:
         f.extractall(f"{WORK}/voice")
@@ -68,6 +74,7 @@ for meta in glob.glob(f"{WORK}/voice/**/voice.json", recursive=True) + glob.glob
     ref_wav = os.path.join(os.path.dirname(meta), info.get("audio", "ref.wav"))
     ref_text = ref_text or info["text"]
     name = name or info.get("name", "")
+    emotion_refs = {e: (os.path.join(os.path.dirname(meta), v["audio"]), v["text"]) for e, v in (info.get("emotions") or {}).items()}
     break
 if not ref_wav:
     wavs = [p for p in glob.glob("/kaggle/input/**/*", recursive=True) if p.lower().endswith((".wav", ".mp3", ".m4a", ".ogg", ".opus", ".flac"))]
@@ -76,21 +83,27 @@ if not ref_wav:
 assert ref_text, "Set REF_TEXT (exactly what is said in the recording) in the settings cell."
 name = name or "My voice"
 print("Voice:", name, "|", ref_wav, "|", ref_text)
+print("Emotions:", ", ".join(emotion_refs) or "none (normal tone only)")
 """),
     ("code", """# 3. Make the training speech with the big model (about 30-60 minutes on 2 GPUs)
 DATA = f"{WORK}/data"
 sh(f"cd {PV} && python make_sentences.py {DATA} {SENTENCES}")
-procs = []
+# Share the sentences between the normal tone and each emotion recording.
+sh(f"cd {PV} && python emotions.py {DATA} {','.join(emotion_refs)}")
 n = max(1, torch.cuda.device_count())
-for i in range(n):
-    cmd = (f"cd {PV} && CUDA_VISIBLE_DEVICES={i} python generate.py --ref {shlex.quote(ref_wav)} --ref-text {shlex.quote(ref_text)} "
-           f"--out {DATA} --steps {STEPS} --batch 8 --shard {i}/{n} > {WORK}/gen{i}.log 2>&1")
-    procs.append(subprocess.Popen(cmd, shell=True))
-for p in procs:
-    p.wait()
-for i in range(n):
-    print(open(f"{WORK}/gen{i}.log").read()[-600:])
-assert all(p.returncode == 0 for p in procs), "Generation failed: see the log above"
+tones = [(None, ref_wav, ref_text)] + [(e, w, t) for e, (w, t) in emotion_refs.items()]
+for tone, wav, text in tones:
+    procs = []
+    for i in range(n):
+        cmd = (f"cd {PV} && CUDA_VISIBLE_DEVICES={i} python generate.py --ref {shlex.quote(wav)} --ref-text {shlex.quote(text)} "
+               f"--emotion {shlex.quote(tone or '')} --out {DATA} --steps {STEPS} --batch 8 --shard {i}/{n} > {WORK}/gen{i}.log 2>&1")
+        procs.append(subprocess.Popen(cmd, shell=True, executable="/bin/bash"))
+    for p in procs:
+        p.wait()
+    print(f"--- {tone or 'normal tone'} ---")
+    for i in range(n):
+        print(open(f"{WORK}/gen{i}.log").read()[-300:])
+    assert all(p.returncode == 0 for p in procs), "Generation failed: see the log above"
 sh(f"cd {PV} && python dataset.py {DATA}")
 """),
     ("code", """# 4. Train the small fast model (TRAIN_HOURS)
@@ -98,7 +111,7 @@ TRAIN = f"{WORK}/train"
 sh(f"cd {PV} && python train.py --data {DATA} --piper {WORK}/piper --out {TRAIN} --hours {TRAIN_HOURS} --batch 16 2>&1 | grep -v Warning | tail -n 40")
 """),
     ("code", """# 5. Package it for the app
-sh(f"cd {PV} && python package.py --train {TRAIN} --piper {WORK}/piper --name {shlex.quote(name)} --out {OUT}")
+sh(f"cd {PV} && python package.py --train {TRAIN} --piper {WORK}/piper --name {shlex.quote(name)} --data {DATA} --out {OUT}")
 for f in ("model.onnx", "config.json", "voice.json"):
     os.remove(f"{OUT}/{f}")  # they are inside the zip
 print("Done! Download from the Output tab:", os.listdir(OUT))

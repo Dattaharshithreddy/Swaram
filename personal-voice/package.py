@@ -49,6 +49,8 @@ def main() -> None:
     p.add_argument("--piper", required=True)
     p.add_argument("--name", required=True)
     p.add_argument("--out", required=True)
+    p.add_argument("--data", help="Training data folder (to record which emotions the voice learned)")
+    p.add_argument("--min-emotion-lines", type=int, default=15, help="Emotions with fewer training lines are left out")
     args = p.parse_args()
 
     train, out = Path(args.train).resolve(), Path(args.out).resolve()
@@ -71,6 +73,12 @@ def main() -> None:
         "created": int(time.time()),
         "checkpoint": ckpt.name,
     }
+    if args.data and (Path(args.data) / "emotions_used.json").exists():
+        import emotions
+
+        used = json.loads((Path(args.data) / "emotions_used.json").read_text("utf-8"))
+        # Only emotions with enough lines to have been learned.
+        voice["emotions"] = {e: emotions.TOKENS[e] for e, n in used.items() if n >= args.min_emotion_lines}
     (out / "voice.json").write_text(json.dumps(voice, ensure_ascii=False, indent=1), "utf-8")
     (out / "config.json").write_text(json.dumps(config, ensure_ascii=False), "utf-8")
 

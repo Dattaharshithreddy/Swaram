@@ -24,6 +24,7 @@ from swaram_edge.runner import normalize_ref_text, trim_silence  # noqa: E402
 from swaram_edge.vocos_loader import build_vocos_24khz, load_vocos  # noqa: E402
 
 import corpus  # noqa: E402
+import emotions  # noqa: E402
 
 SR = 24000
 HOP = 256
@@ -51,6 +52,7 @@ def main() -> None:
     p.add_argument("--batch", type=int, default=8)
     p.add_argument("--random", type=int, default=0, help="Tests: random model with this many layers")
     p.add_argument("--shard", default="0/1", help="i/n: this process makes every n-th sentence (one per GPU)")
+    p.add_argument("--emotion", default="", help="Only sentences assigned to this emotion (emotions.json); '' = normal tone")
     args = p.parse_args()
 
     out = Path(args.out)
@@ -97,12 +99,16 @@ def main() -> None:
         sents = corpus.sentences(args.count)
         sents_file.write_text(json.dumps(sents, ensure_ascii=False, indent=0), "utf-8")
     shard, shards = (int(x) for x in args.shard.split("/"))
+    assigned = emotions.load(out)
+    want = args.emotion or None
     todo = [
         (i, s) for i, s in enumerate(sents)
-        if i % shards == shard and not (out / "wav" / f"s{i:05d}.wav").exists()
+        if i % shards == shard
+        and (not assigned or assigned.get(i) == want)
+        and not (out / "wav" / f"s{i:05d}.wav").exists()
     ]
     todo.sort(key=lambda x: len(x[1].encode()))  # similar lengths batch well
-    print(f"{len(sents)} sentences, {len(todo)} to generate")
+    print(f"{len(sents)} sentences, {len(todo)} to generate ({want or 'normal tone'})")
 
     t0 = time.time()
     done = 0

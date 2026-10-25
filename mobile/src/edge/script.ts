@@ -7,19 +7,24 @@
  *
  * A line "Name: text" is spoken by that speaker; lines without a name
  * continue with the previous speaker (or the default voice). A blank line
- * adds a short pause, "[pause 2s]" an exact one.
+ * adds a short pause, "[pause 2s]" an exact one. Emotions: "Amma (sad): …"
+ * or "[excited] …" (English or Telugu words), for that line. Other
+ * [bracketed] stage directions are not read aloud.
  */
+
+import { type Emotion, toEmotion } from './emotions';
 
 export interface Segment {
   speaker: string | null;
+  /** From "Name (sad):" or "[sad]"; null = the voice's normal tone. */
+  emotion: Emotion | null;
   text: string;
   /** Silence after this segment, in seconds. */
   pauseAfter: number;
 }
 
-const SPEAKER = /^\s*([^\s:：][^:：\n]{0,23}?)\s*[:：]\s*(.*)$/;
+const SPEAKER = /^\s*([^\s:：(（][^:：(（\n]{0,23}?)\s*(?:[(（]\s*([^)）]{1,20})\s*[)）])?\s*[:：]\s*(.*)$/;
 const PAUSE = /^\s*\[\s*(?:pause|విరామం)?\s*(\d+(?:\.\d+)?)\s*s(?:ec(?:onds?)?)?\s*\]\s*$/i;
-const INLINE_PAUSE = /\[\s*(?:pause|విరామం)?\s*(\d+(?:\.\d+)?)\s*s(?:ec(?:onds?)?)?\s*\]/gi;
 export const BLANK_LINE_PAUSE = 0.6;
 export const SPEAKER_CHANGE_PAUSE = 0.3;
 
@@ -46,23 +51,35 @@ export function parseScript(script: string): Segment[] {
       continue;
     }
     let text = line;
+    let emotion: Emotion | null = null;
     const m = SPEAKER.exec(line);
-    if (m && looksLikeSpeaker(m[1]) && !(/\d$/.test(m[1]) && /^\d/.test(m[2]))) {
+    if (m && looksLikeSpeaker(m[1]) && !(/\d$/.test(m[1]) && /^\d/.test(m[3]))) {
       const next = m[1].trim();
       if (speaker !== null && next !== speaker) addPause(SPEAKER_CHANGE_PAUSE);
       speaker = next;
-      text = m[2].trim();
+      emotion = toEmotion(m[2]);
+      text = m[3].trim();
     }
-    // Inline [pause 1s] splits the line.
-    const pieces = text.split(INLINE_PAUSE);
-    for (let i = 0; i < pieces.length; i++) {
-      if (i % 2 === 1) {
-        addPause(Math.min(30, Number.parseFloat(pieces[i])));
+    // Walk the line: [pause 1s] adds a pause, [excited] sets the emotion from there on,
+    // other tags ([laughs]) are stage directions and are not read.
+    let last = 0;
+    const flush = (piece: string) => {
+      const clean = piece.replace(/\s+/g, ' ').trim();
+      if (clean) out.push({ speaker, emotion, text: clean, pauseAfter: 0 });
+    };
+    for (const tag of text.matchAll(/\[([^\]]{1,40})\]/g)) {
+      flush(text.slice(last, tag.index));
+      last = (tag.index ?? 0) + tag[0].length;
+      const inner = tag[1];
+      const p = /^\s*(?:pause|విరామం)?\s*(\d+(?:\.\d+)?)\s*s(?:ec(?:onds?)?)?\s*$/i.exec(inner);
+      if (p) {
+        addPause(Math.min(30, Number.parseFloat(p[1])));
         continue;
       }
-      const piece = pieces[i].trim();
-      if (piece) out.push({ speaker, text: piece, pauseAfter: 0 });
+      const e = toEmotion(inner);
+      if (e) emotion = e;
     }
+    flush(text.slice(last));
   }
   return out;
 }

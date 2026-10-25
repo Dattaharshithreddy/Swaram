@@ -188,7 +188,7 @@ export function Chip({
   const t = useTheme();
   const border = selected ? (gold ? t.gold : t.accent) : t.line;
   const bg = selected ? (gold ? t.goldBg : t.tint) : 'transparent';
-  const fg = selected && gold ? t.goldText : selected ? t.ink : '#C9CCE0';
+  const fg = selected && gold ? t.goldText : selected ? t.ink : t.chipText;
   return (
     <Pressable
       accessibilityRole="button"
@@ -228,7 +228,7 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
 export function Badge({ text, kind = 'plain', icon }: { text: string; kind?: 'plain' | 'gold' | 'ok' | 'danger'; icon?: IconName }) {
   const t = useTheme();
   const look = {
-    plain: { bg: t.surface2, fg: '#C9CCE0' },
+    plain: { bg: t.surface2, fg: t.chipText },
     gold: { bg: t.goldBg, fg: t.goldText },
     ok: { bg: t.okBg, fg: t.ok },
     danger: { bg: t.tint, fg: t.danger },

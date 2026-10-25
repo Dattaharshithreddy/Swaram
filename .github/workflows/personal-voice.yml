@@ -51,6 +51,18 @@ jobs:
           bad = [x for x in g if phonemize(x['text']) != x['phonemes']]
           assert not bad, bad
           print(len(g), 'golden cases match')"
+      - name: Emotion tokens match the app
+        run: |
+          python - <<'PY'
+          import re, sys
+          sys.path.insert(0, "personal-voice")
+          from emotions import TOKENS
+          ts = open("mobile/src/edge/emotions.ts", encoding="utf-8").read()
+          block = ts[ts.index("EMOTION_TOKENS"):]
+          app = dict(re.findall(r"(\w+): '(.)'", block))
+          assert app == TOKENS, (app, TOKENS)
+          print(len(TOKENS), "emotion tokens match")
+          PY
       - name: Notebook is up to date
         working-directory: personal-voice
         run: python make_notebook.py && git diff --exit-code swaram_personal_voice.ipynb
@@ -79,7 +91,8 @@ jobs:
         working-directory: personal-voice
         run: |
           set -o pipefail
-          python package.py --train $WORK/train --piper ../piper --name "CI test" --out $WORK/output 2>&1 | tee $WORK/package.txt
+          python package.py --train $WORK/train --piper ../piper --name "CI test" --data $WORK/data --min-emotion-lines 1 --out $WORK/output 2>&1 | tee $WORK/package.txt
+          grep -q '"happy"' $WORK/output/voice.json || { echo "::error::voice.json has no emotions"; exit 1; }
           echo "::notice title=Personal voice pipeline::$(tail -5 $WORK/package.txt | tr '\n' ' ')"
       - uses: actions/upload-artifact@v4
         with:

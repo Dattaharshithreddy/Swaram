@@ -260,7 +260,7 @@ export function NewVoiceScreen2() {
         <View style={{ width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: t.accent, backgroundColor: consent ? t.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
           {consent && <Icon name="check" size={15} color={t.onAccent} />}
         </View>
-        <Body style={{ flex: 1, color: '#C9CCE0' }}>This is my own voice, or the speaker gave me written permission to clone it.</Body>
+        <Body style={{ flex: 1, color: t.chipText }}>This is my own voice, or the speaker gave me written permission to clone it.</Body>
       </Pressable>
       <Button title="Create voice" icon="check" onPress={create} busy={busy} disabled={!clip || !name.trim() || !transcript.trim() || !consent || isStreaming} />
       <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12, textAlign: 'center' }}>

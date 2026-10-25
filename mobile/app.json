@@ -13,7 +13,7 @@
     "android": {
       "package": "com.dattaharshithreddy.swaram",
       "adaptiveIcon": {
-        "backgroundColor": "#C4213A",
+        "backgroundColor": "#1C1844",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -37,6 +37,6 @@
       "favicon": "./assets/favicon.png"
     },
     "scheme": "swaram",
-    "backgroundColor": "#0E0F1A"
+    "backgroundColor": "#100E24"
   }
 }

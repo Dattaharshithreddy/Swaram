@@ -2,6 +2,7 @@
 import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav } from './dsp';
+import { type Emotion, EMOTIONS } from './emotions';
 import type { EdgeVoiceData } from './engine';
 
 export const MODEL_BASE_URL = 'https://github.com/Dattaharshithreddy/Swaram/releases/download/edge-model/';
@@ -125,6 +126,8 @@ export interface OfflineVoice {
   rms: number;
   frames: number;
   createdAt: number;
+  /** Extra recordings in other tones (see emotions.ts): words, length and level of each. */
+  emotions?: Partial<Record<Emotion, { text: string; frames: number; rms: number }>>;
 }
 
 export function listVoices(): OfflineVoice[] {
@@ -180,13 +183,27 @@ export function hasRecording(v: OfflineVoice): boolean {
 export async function exportForTraining(v: OfflineVoice): Promise<string> {
   const edge = SwaramEdge;
   if (!edge) throw new Error('This app build has no offline engine.');
+  const paths = [new File(voicesDir(), `${v.id}.wav`).uri];
+  const names = ['ref.wav'];
+  const emotions: Record<string, { audio: string; text: string }> = {};
+  for (const e of EMOTIONS) {
+    const info = v.emotions?.[e];
+    const f = new File(voicesDir(), `${v.id}.${e}.wav`);
+    if (info && f.exists) {
+      paths.push(f.uri);
+      names.push(`emo-${e}.wav`);
+      emotions[e] = { audio: `emo-${e}.wav`, text: info.text.trim() };
+    }
+  }
   const meta = new File(Paths.cache, 'voice.json');
   if (meta.exists) meta.delete();
-  meta.writeSync(JSON.stringify({ name: v.name, language: v.language, text: v.text.trim(), audio: 'ref.wav' }));
+  meta.writeSync(JSON.stringify({ name: v.name, language: v.language, text: v.text.trim(), audio: 'ref.wav', emotions }));
+  paths.push(meta.uri);
+  names.push('voice.json');
   const safe = v.name.replace(/[^A-Za-z0-9\u0C00-\u0C7F]+/g, '-').replace(/^-+|-+$/g, '') || 'voice';
   const out = new File(Paths.cache, `swaram-training-${safe}.zip`);
   if (out.exists) out.delete();
-  await edge.zip([new File(voicesDir(), `${v.id}.wav`).uri, meta.uri], ['ref.wav', 'voice.json'], out.uri);
+  await edge.zip(paths, names, out.uri);
   return out.uri;
 }
 
@@ -196,6 +213,52 @@ export function deleteVoice(v: OfflineVoice): void {
     const f = new File(dir, `${v.id}.${ext}`);
     if (f.exists) f.delete();
   }
+  for (const e of EMOTIONS) deleteEmotionFiles(v.id, e);
+}
+
+// --- Emotion recordings -------------------------------------------------------
+
+function deleteEmotionFiles(id: string, e: Emotion) {
+  for (const ext of ['mel', 'wav']) {
+    const f = new File(voicesDir(), `${id}.${e}.${ext}`);
+    if (f.exists) f.delete();
+  }
+}
+
+function writeMeta(v: OfflineVoice) {
+  new File(voicesDir(), `${v.id}.json`).writeSync(JSON.stringify(v));
+}
+
+export function saveEmotion(v: OfflineVoice, e: Emotion, data: EdgeVoiceData, clip: Float32Array): OfflineVoice {
+  const dir = voicesDir();
+  new File(dir, `${v.id}.${e}.mel`).writeSync(new Uint8Array(data.mel.buffer, data.mel.byteOffset, data.mel.byteLength));
+  new File(dir, `${v.id}.${e}.wav`).writeSync(encodeWav(clip));
+  const next: OfflineVoice = { ...v, emotions: { ...(v.emotions ?? {}), [e]: { text: data.text, frames: data.frames, rms: data.rms } } };
+  writeMeta(next);
+  return next;
+}
+
+export function deleteEmotion(v: OfflineVoice, e: Emotion): OfflineVoice {
+  deleteEmotionFiles(v.id, e);
+  const emotions = { ...(v.emotions ?? {}) };
+  delete emotions[e];
+  const next = { ...v, emotions };
+  writeMeta(next);
+  return next;
+}
+
+export function emotionRecording(v: OfflineVoice, e: Emotion): File {
+  return new File(voicesDir(), `${v.id}.${e}.wav`);
+}
+
+/** The voice in that tone, if it has a recording for it. */
+export async function loadEmotionData(v: OfflineVoice, e: Emotion): Promise<EdgeVoiceData | null> {
+  const info = v.emotions?.[e];
+  const f = new File(voicesDir(), `${v.id}.${e}.mel`);
+  if (!info || !f.exists) return null;
+  const bytes = await f.bytes();
+  const mel = new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  return { mel, frames: info.frames, text: info.text, rms: info.rms };
 }
 
 export function saveAudio(bytes: Uint8Array): File {

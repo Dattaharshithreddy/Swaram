@@ -1,7 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import { usePlayer } from '../components/player';
 import { Badge, Button, Card, CardTitle, Chip, Empty, Field, Header, Icon, IconButton, Label, Notice, ProgressBar, Screen, Segmented } from '../components/ui';
 import { VoicePicker } from '../components/VoicePicker';
@@ -18,20 +18,28 @@ import {
   partsDone,
   redoPart,
   type ScriptJob,
+  setPartEmotion,
   setPartVoice,
   srtFile,
 } from '../edge/jobs';
+import { type Emotion, EMOTION_INFO, EMOTIONS } from '../edge/emotions';
 import { duration } from '../edge/recent';
 import { parseScript, speakersOf } from '../edge/script';
 import { displayName, findVoice, keyOf, matchSpeaker, type VoiceRef } from '../edge/voices';
 import { guidanceFor, QUALITY, SPEEDS, useApp } from '../state';
 import { font, radius, space, speakerColors, useTheme } from '../theme';
 
-const EXAMPLE = `Narrator: అలా ఆ రోజు ఉదయం మొదలైంది.
-Amma: నాన్నా, భోజనం చేశావా?
-ME: ఇంకా లేదమ్మా, ఇప్పుడే వస్తున్నా.
+const EXAMPLE = `Narrator (calm): అలా ఆ రోజు ఉదయం మొదలైంది.
+Amma (sad): నాన్నా, భోజనం చేశావా? రాత్రంతా ఎక్కడ ఉన్నావు?
+ME: [excited] అమ్మా! నాకు ఉద్యోగం వచ్చింది!
+Amma (surprised): నిజంగానా? [happy] దేవుడా, ఎంత మంచి వార్త!
 [pause 1s]
-Narrator: ఆ మాటతో కథ కొత్త మలుపు తిరిగింది.`;
+Narrator (serious): ఆ మాటతో కథ కొత్త మలుపు తిరిగింది.`;
+
+/** True when the voice has a real recording (or learned token) for the emotion; else the style fallback is used. */
+function emotionSupport(v: VoiceRef, e: Emotion): boolean {
+  return v.kind === 'f5' ? !!v.voice.emotions?.[e] : (v.voice.emotions ?? []).includes(e);
+}
 
 function partWav(job: ScriptJob, i: number): Promise<string> {
   return readFloats(partFile(job, i)).then((x) => {
@@ -162,7 +170,7 @@ export function StudioScreen() {
           </View>
           <View style={{ flexDirection: 'row', gap: space.md, flexWrap: 'wrap' }}>
             <Pressable accessibilityRole="button" onPress={() => setScript(EXAMPLE)}>
-              <Text style={{ color: t.accent, fontFamily: font.bold, fontSize: 13 }}>Use a 3-voice example</Text>
+              <Text style={{ color: t.accent, fontFamily: font.bold, fontSize: 13 }}>Use a 3-voice example with emotions</Text>
             </Pressable>
             {script ? (
               <Pressable accessibilityRole="button" onPress={() => Alert.alert('Clear the script?', '', [{ text: 'Keep' }, { text: 'Clear', style: 'destructive', onPress: () => setScript('') }])}>
@@ -170,7 +178,14 @@ export function StudioScreen() {
               </Pressable>
             ) : null}
           </View>
-          <Notice text="Tips: “Name: text” picks the speaker · a blank line adds a short pause · [pause 2s] adds an exact pause · English letters are read as Telugu." />
+          <Notice text="Tips: “Name: text” picks the speaker · “Name (sad): text” or [excited] sets the emotion · a blank line adds a short pause · [pause 2s] an exact one · English letters are read as Telugu." />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {EMOTIONS.map((e) => (
+              <Pressable key={e} accessibilityRole="button" accessibilityLabel={`Insert ${e} tag`} onPress={() => setScript((cur) => `${cur}${cur && !cur.endsWith('\n') && !cur.endsWith(' ') ? ' ' : ''}[${e}] `)}>
+                <Badge text={EMOTION_INFO[e].label} />
+              </Pressable>
+            ))}
+          </View>
         </Card>
       ) : (
         <>
@@ -209,6 +224,7 @@ export function StudioScreen() {
                   <View style={{ flex: 1, gap: 4 }}>
                     <Text style={{ color: colorOf(s.speaker), fontFamily: font.bold, fontSize: 11 }}>
                       {(s.speaker ?? 'Default').toUpperCase()} · {v ? displayName(v) : 'no voice'}
+                      {s.emotion ? `  ·  ${EMOTION_INFO[s.emotion].label}${v && emotionSupport(v, s.emotion) ? '' : ' (style)'}` : ''}
                       {s.pauseAfter ? `  ·  then ${s.pauseAfter}s pause` : ''}
                     </Text>
                     <Text style={{ color: t.ink, fontSize: 14, lineHeight: 23 }}>{s.text}</Text>
@@ -362,6 +378,7 @@ function JobLines({ job }: { job: ScriptJob }) {
   const [busy, setBusy] = useState<number | null>(null);
   const [editing, setEditing] = useState<{ i: number; text: string } | null>(null);
   const [picker, setPicker] = useState<number | null>(null);
+  const [emoPicker, setEmoPicker] = useState<number | null>(null);
   const [, setTick] = useState(0);
   const isRunning = app.running?.job.id === job.id;
   const speakers = [...new Set(job.parts.map((p) => p.speaker).filter(Boolean))] as string[];
@@ -396,6 +413,9 @@ function JobLines({ job }: { job: ScriptJob }) {
                 <Text style={{ color, fontFamily: font.bold, fontSize: 11 }}>
                   {(p.speaker ?? 'Line').toUpperCase()} · {job.voiceNames[p.voice] ?? 'voice'} ▾
                 </Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Change emotion" onPress={() => setEmoPicker(i)} disabled={isRunning} style={{ alignSelf: 'flex-start' }}>
+                <Badge text={p.emotion ? EMOTION_INFO[p.emotion].label : 'Normal tone'} kind={p.emotion ? 'gold' : 'plain'} icon="smile" />
               </Pressable>
               {editing?.i === i ? (
                 <TextInput
@@ -439,6 +459,30 @@ function JobLines({ job }: { job: ScriptJob }) {
           </View>
         );
       })}
+      <Modal visible={emoPicker !== null} transparent animationType="slide" onRequestClose={() => setEmoPicker(null)}>
+        <Pressable accessibilityLabel="Close" onPress={() => setEmoPicker(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} />
+        <View style={{ backgroundColor: t.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: space.lg, gap: space.md }}>
+          <Text style={{ color: t.ink, fontFamily: font.bold, fontSize: 17 }}>Emotion for this line</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            {[null, ...EMOTIONS].map((e) => (
+              <Chip
+                key={e ?? 'normal'}
+                label={e ? EMOTION_INFO[e].label : 'Normal'}
+                selected={emoPicker !== null && (job.parts[emoPicker].emotion ?? null) === e}
+                onPress={() => {
+                  if (emoPicker === null) return;
+                  const i = emoPicker;
+                  setEmoPicker(null);
+                  setPartEmotion(job, i, e);
+                  app.refreshJobs();
+                  void redo(i);
+                }}
+              />
+            ))}
+          </View>
+          <Notice text="Voices with a recording in that emotion sound most convincing (Voices → Add emotions)." />
+        </View>
+      </Modal>
       <VoicePicker
         visible={picker !== null}
         title="Voice for this line"

@@ -14,6 +14,7 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { PlayerProvider } from './src/components/player';
 import { Icon, type IconName } from './src/components/ui';
 import { runSelfTest } from './src/edge/selftest';
+import { EmotionScreen } from './src/screens/EmotionScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { NewVoiceScreen2 } from './src/screens/NewVoiceScreen2';
 import { ServerMode } from './src/screens/ServerMode';
@@ -82,6 +83,8 @@ function Main() {
               <NewVoiceScreen2 />
             ) : page?.name === 'server' ? (
               <ServerMode />
+            ) : page?.name === 'emotion' ? (
+              <EmotionScreen voiceId={page.voiceId} />
             ) : (
               <>
                 {tab === 'home' && <HomeScreen />}
@@ -93,7 +96,7 @@ function Main() {
           </View>
         </ErrorBoundary>
       </KeyboardAvoidingView>
-      <SafeAreaView edges={['bottom']} style={[styles.tabBar, { borderColor: '#1F2236', backgroundColor: t.tab }]}>
+      <SafeAreaView edges={['bottom']} style={[styles.tabBar, { borderColor: t.line, backgroundColor: t.tab }]}>
         {TABS.map((item) => {
           const active = item.key === tab && !page;
           return (

@@ -12,13 +12,14 @@ import { SwaramEdge } from '../../modules/swaram-edge';
 import { SAMPLE_RATE } from './dsp';
 import { chunkText, chunksFor, type EdgeEngine, type EdgeVoiceData, writeFloats } from './engine';
 import type { FastVoice } from './personal';
+import { type Emotion, EMOTION_STYLE } from './emotions';
 import { parseScript } from './script';
 import { displayName, findVoice, keyOf, listAllVoices, type VoiceRef } from './voices';
 
 /** Makes one part's audio (24 kHz); progress.done/total count steps for the bar. */
 export type PartMaker = (text: string, progress: { done: number; total: number }) => Promise<Float32Array>;
-/** Gives the maker for a voice key (loads the model or voice as needed). */
-export type MakerFor = (voiceKey: string) => Promise<PartMaker>;
+/** Gives the maker for a voice key and emotion (loads the model, voice or emotion recording as needed). */
+export type MakerFor = (voiceKey: string, emotion?: Emotion | null) => Promise<PartMaker>;
 
 export interface MakeOptions {
   steps: number;
@@ -33,14 +34,29 @@ export function f5Maker(engine: EdgeEngine, data: EdgeVoiceData, opts: MakeOptio
     engine.speakChunk(data, text, { steps: opts.steps, cfg: 2.0, sway: -1.0, guidance: opts.guidance, speed: opts.speed }, timing, progress, refMel);
 }
 
-export function fastMaker(fast: FastVoice, speed = 1): PartMaker {
-  return (text) => fast.speakPart(text, speed);
+export function fastMaker(fast: FastVoice, speed = 1, emotion?: Emotion | null): PartMaker {
+  return (text) => fast.speakPart(text, speed, emotion);
+}
+
+/** Louder or softer, with a soft limit so loud styles don't clip harshly. */
+export function withGain(maker: PartMaker, gain: number): PartMaker {
+  if (Math.abs(gain - 1) < 0.01) return maker;
+  return async (text, progress) => {
+    const x = await maker(text, progress);
+    const out = new Float32Array(x.length);
+    for (let i = 0; i < x.length; i++) {
+      const v = x[i] * gain;
+      out[i] = v > 0.9 ? 0.9 + Math.tanh((v - 0.9) * 5) * 0.09 : v < -0.9 ? -0.9 - Math.tanh((-v - 0.9) * 5) * 0.09 : v;
+    }
+    return out;
+  };
 }
 
 export interface JobPart {
   text: string;
   voice: string;
   speaker: string | null;
+  emotion?: Emotion | null;
   /** Silence after this part, seconds. */
   pauseAfter: number;
 }
@@ -178,8 +194,15 @@ export function createScriptJob(
     if (!ref) throw new Error(seg.speaker ? `Choose a voice for "${seg.speaker}".` : 'Choose a voice.');
     voiceNames[keyOf(ref)] = displayName(ref);
     const pieces = splitForVoice(ref, opts.prepare(seg.text, ref.voice.language)).filter((p) => p.trim());
+    const pause = seg.emotion ? seg.pauseAfter * EMOTION_STYLE[seg.emotion].pause : seg.pauseAfter;
     pieces.forEach((text, i) =>
-      parts.push({ text, voice: keyOf(ref), speaker: seg.speaker, pauseAfter: i === pieces.length - 1 ? seg.pauseAfter : 0 }),
+      parts.push({
+        text,
+        voice: keyOf(ref),
+        speaker: seg.speaker,
+        emotion: seg.emotion,
+        pauseAfter: i === pieces.length - 1 ? Math.round(pause * 100) / 100 : 0,
+      }),
     );
   }
   if (!parts.length) throw new Error('The script is empty.');
@@ -209,7 +232,7 @@ function stepsFor(job: ScriptJob, part: JobPart): number {
 
 async function makePart(job: ScriptJob, i: number, makerFor: MakerFor, progress: { done: number; total: number }) {
   const part = job.parts[i];
-  const maker = await makerFor(part.voice);
+  const maker = await makerFor(part.voice, part.emotion ?? null);
   const t0 = Date.now();
   const wav = await maker(part.text, progress);
   // Write under a temporary name first, so a crash never leaves a half part.
@@ -342,6 +365,15 @@ export async function redoPart(job: ScriptJob, i: number, makerFor: MakerFor, ne
   await makePart(job, i, makerFor, { done: 0, total: stepsFor(job, job.parts[i]) });
   save(job);
   if (partsDone(job) === job.parts.length) await finish(job);
+}
+
+/** Changes the emotion of one part (it must be made again). */
+export function setPartEmotion(job: ScriptJob, i: number, emotion: Emotion | null) {
+  job.parts[i] = { ...job.parts[i], emotion };
+  const f = partFile(job, i);
+  if (f.exists) f.delete();
+  job.finishedAt = undefined;
+  save(job);
 }
 
 /** Changes the voice of one part (it must be made again). */

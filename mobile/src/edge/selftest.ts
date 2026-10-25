@@ -9,10 +9,11 @@ import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav, SAMPLE_RATE } from './dsp';
 import { EdgeEngine, type Provider } from './engine';
 import { File, Paths } from 'expo-file-system';
-import { createScriptJob, f5Maker, fastMaker, jobVoiceKeys, type MakerFor, outputFile, type PartMaker, partsDone, redoPart, runJob, srtFile } from './jobs';
+import { createScriptJob, f5Maker, fastMaker, withGain, jobVoiceKeys, type MakerFor, outputFile, type PartMaker, partsDone, redoPart, runJob, srtFile } from './jobs';
 import { replaceWords } from './textrules';
 import { deletePersonal, FastVoice, importPersonal } from './personal';
-import { downloadModel, exportForTraining, loadVoiceData, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
+import { EMOTION_STYLE } from './emotions';
+import { downloadModel, exportForTraining, loadEmotionData, loadVoiceData, saveEmotion, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
 import { prepareText } from './telugu';
 import { spokenText } from '../translit';
 
@@ -111,21 +112,34 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     log(`fast voice audio=${(fastOut.wav.length / SAMPLE_RATE).toFixed(2)}s in ${fastOut.seconds.toFixed(2)}s load=${fast.loadSeconds.toFixed(2)}s`);
     if (fastOut.wav.length < SAMPLE_RATE / 2 || !fastOut.wav.every(Number.isFinite)) throw new Error('fast voice output bad');
 
-    // Multi-voice script: big-model voice ("Self test") and fast voice ("CI test"), with a pause.
+    // Emotion recording for the big-model voice (a lower, slower clip stands in for "sad").
+    const sadClip = testClip(5).map((v, i) => v * (0.6 + 0.2 * Math.sin(i / 3000)));
+    const sadData = await engine.makeVoice(sadClip, 'ఇలా జరుగుతుందని అనుకోలేదు. మనసంతా బరువుగా ఉంది.');
+    const withSad = saveEmotion(saved, 'sad', sadData, sadClip);
+    log(`emotion saved: ${Object.keys(withSad.emotions ?? {}).join(',')} fast voice knows: ${(pv.emotions ?? []).join(',') || 'none'}`);
+
+    // Multi-voice script with emotions: big-model voice ("Self test") and fast voice ("CI test").
     const opts = { steps: 2, guidance: 0.5, speed: 1 };
-    const makers = new Map<string, PartMaker>([
-      [`f5:${saved.id}`, f5Maker(engine, reloaded, opts, 'cond-selftest')],
-      [`fast:${pv.id}`, fastMaker(fast, 1.1)],
-    ]);
-    const makerFor: MakerFor = async (key) => {
-      const m = makers.get(key);
-      if (!m) throw new Error(`no maker for ${key}`);
-      return m;
+    const used: string[] = [];
+    const makerFor: MakerFor = async (key, emotion) => {
+      const style = emotion ? EMOTION_STYLE[emotion] : null;
+      if (key === `fast:${pv.id}`) {
+        used.push(`fast:${emotion ?? 'normal'}:${fast.knows(emotion) ? 'token' : 'style'}`);
+        return fast.knows(emotion) ? fastMaker(fast, 1, emotion) : withGain(fastMaker(fast, style?.speed ?? 1), style?.gain ?? 1);
+      }
+      if (key === `f5:${saved.id}`) {
+        const take = emotion ? await loadEmotionData(withSad, emotion) : null;
+        used.push(`f5:${emotion ?? 'normal'}:${take ? 'recording' : emotion ? 'style' : 'normal'}`);
+        return take
+          ? f5Maker(engine, take, opts, `cond-selftest-${emotion}`)
+          : withGain(f5Maker(engine, reloaded, { ...opts, speed: style?.speed ?? 1 }, 'cond-selftest'), style?.gain ?? 1);
+      }
+      throw new Error(`no maker for ${key}`);
     };
     const script =
-      'Self test: ఈ రోజు మనం ఒక చిన్న కథ చెప్పుకుందాం.\n' +
-      'CI test: ఒక ఊరిలో ఒక రైతు ఉండేవాడు, అతను ప్రతి రోజు పొలానికి వెళ్ళేవాడు.\n[pause 1s]\n' +
-      'Self test: ఒక రోజు అతనికి ఒక బంగారు గుడ్డు దొరికింది. Harshith 25 rupayalu.';
+      'Self test (sad): ఈ రోజు మనం ఒక చిన్న కథ చెప్పుకుందాం.\n' +
+      'CI test: [happy] ఒక ఊరిలో ఒక రైతు ఉండేవాడు, అతను ప్రతి రోజు పొలానికి వెళ్ళేవాడు. [laughs]\n[pause 1s]\n' +
+      'Self test: [excited] ఒక రోజు అతనికి ఒక బంగారు గుడ్డు దొరికింది. Harshith 25 rupayalu.';
     const job = createScriptJob(script, {
       ...opts,
       title: 'Self test dialogue',
@@ -133,7 +147,8 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
       prepare: (text, language) =>
         prepareText(spokenText(replaceWords(text, [{ from: 'Harshith', to: 'హర్షిత్' }]), language), language),
     });
-    log(`dialogue parts=${job.parts.length} voices=${jobVoiceKeys(job).length} pauses=${job.parts.map((p) => p.pauseAfter).join(',')}`);
+    log(`dialogue parts=${job.parts.length} voices=${jobVoiceKeys(job).length} pauses=${job.parts.map((p) => p.pauseAfter).join(',')} emotions=${job.parts.map((p) => p.emotion ?? '-').join(',')}`);
+    if (job.parts.map((p) => p.emotion ?? '-').join(',') !== 'sad,happy,excited') throw new Error('emotion tags');
     if (jobVoiceKeys(job).length !== 2 || !job.parts.some((p) => p.pauseAfter >= 1)) throw new Error('script parsing');
     let stopNow = false;
     const first = await runJob(job, makerFor, (p) => {
@@ -147,6 +162,8 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     const srt = srtFile(job).textSync();
     if (!srt.includes('-->') || !srt.includes('CI test:')) throw new Error(`bad srt: ${srt.slice(0, 200)}`);
 
+    log(`emotion paths: ${used.join(' ')}`);
+    if (!used.includes('f5:sad:recording') || !used.includes('f5:excited:style')) throw new Error('emotion paths');
     // Redo one line with new words, and change a line's voice.
     await redoPart(job, 1, makerFor, 'ఒక ఊరిలో ఒక రైతు ఉండేవాడు.');
     log(`redo line ok, audio=${job.audioSeconds.toFixed(1)}s`);
@@ -159,7 +176,7 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     if (!m4a.exists || (m4a.size ?? 0) < 1000 || (m4a.size ?? 0) > (out.size ?? 0) / 2) throw new Error('m4a export');
     deletePersonal(pv);
 
-    log('OK all checks passed (speak, upload decode, export, fast voice, two-voice script with pause, stop/resume, subtitles, redo line, m4a)');
+    log('OK all checks passed (speak, upload decode, export, fast voice, emotions, two-voice script with pause, stop/resume, subtitles, redo line, m4a)');
     await engine.release();
   } catch (e) {
     log(`FAIL ${e instanceof Error ? `${e.message} ${e.stack ?? ''}` : String(e)}`.replace(/\n/g, ' | '));

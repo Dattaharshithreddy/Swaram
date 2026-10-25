@@ -15,7 +15,8 @@ import {
   trainingNotebook,
 } from './kaggle';
 import { importPersonal } from './personal';
-import { type OfflineVoice, recordingFile } from './store';
+import type { Emotion } from './emotions';
+import { emotionRecording, type OfflineVoice, recordingFile } from './store';
 
 export interface Training {
   id: string;
@@ -84,9 +85,14 @@ export async function startTraining(voice: OfflineVoice, creds: Credentials): Pr
   const wav = recordingFile(voice);
   if (!wav.exists) throw new Error('This voice has no saved recording. Make the voice again to train it.');
   const template = await fetchTemplate();
+  const emotions: Record<string, { text: string; wavBase64: string }> = {};
+  for (const [e, info] of Object.entries(voice.emotions ?? {})) {
+    const f = emotionRecording(voice, e as Emotion);
+    if (info && f.exists) emotions[e] = { text: info.text.trim(), wavBase64: bytesToBase64(await f.bytes()) };
+  }
   const nb = trainingNotebook(
     template,
-    { name: voice.name, language: voice.language, text: voice.text.trim(), wavBase64: bytesToBase64(await wav.bytes()) },
+    { name: voice.name, language: voice.language, text: voice.text.trim(), wavBase64: bytesToBase64(await wav.bytes()), emotions },
     creds.hfToken,
   );
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;

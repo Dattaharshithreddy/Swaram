@@ -6,7 +6,8 @@ import { usePlayer } from '../components/player';
 import { Badge, Button, Card, Empty, Header, Icon, Notice, ProgressBar, Screen } from '../components/ui';
 import { forgetTraining, startTraining } from '../edge/kaggleTraining';
 import { deletePersonal, importPersonal } from '../edge/personal';
-import { deleteVoice, exportForTraining, hasRecording, recordingFile } from '../edge/store';
+import { EMOTION_INFO, EMOTIONS } from '../edge/emotions';
+import { deleteVoice, emotionRecording, exportForTraining, hasRecording, recordingFile } from '../edge/store';
 import { keyOf, type VoiceRef } from '../edge/voices';
 import { languageByCode } from '../languages';
 import { useApp } from '../state';
@@ -132,6 +133,23 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
           }}
         />
       </View>
+      {v.kind === 'f5' && (
+        <View style={{ gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Text style={{ color: t.soft, fontFamily: font.semibold, fontSize: 12 }}>Emotions:</Text>
+            {EMOTIONS.filter((e) => v.voice.emotions?.[e]).map((e) => (
+              <Pressable key={e} accessibilityRole="button" accessibilityLabel={`Play ${e}`} onPress={() => void player.toggle(emotionRecording(v.voice, e).uri)}>
+                <Badge text={EMOTION_INFO[e].label} kind={player.isPlaying(emotionRecording(v.voice, e).uri) ? 'gold' : 'plain'} icon="play" />
+              </Pressable>
+            ))}
+            {!EMOTIONS.some((e) => v.voice.emotions?.[e]) && <Text style={{ color: t.faint, fontFamily: font.regular, fontSize: 12 }}>normal tone only</Text>}
+          </View>
+          <Button title="Add emotions (happy, sad, angry…)" icon="smile" kind="secondary" small onPress={() => app.setPage({ name: 'emotion', voiceId: v.voice.id })} />
+        </View>
+      )}
+      {v.kind === 'fast' && (v.voice.emotions?.length ?? 0) > 0 && (
+        <Notice text={`Knows: ${(v.voice.emotions ?? []).map((e) => EMOTION_INFO[e as keyof typeof EMOTION_INFO]?.label ?? e).join(', ')}`} />
+      )}
       {v.kind === 'f5' && rec && !hasFastTwin && training?.state !== 'running' && (
         <Button title="Make it fast (free, ~4 h on Kaggle)" icon="zap" kind="gold" small busy={busy} onPress={makeFast} />
       )}

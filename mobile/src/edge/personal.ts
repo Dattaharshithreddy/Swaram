@@ -8,6 +8,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { chunkText, readFloats } from './engine';
 import { resample, SAMPLE_RATE } from './dsp';
+import { type Emotion, EMOTION_TOKENS } from './emotions';
 import { teluguPhonemes } from './teluguIpa';
 
 export interface PersonalVoice {
@@ -16,6 +17,8 @@ export interface PersonalVoice {
   language: string;
   sampleRate: number;
   createdAt: number;
+  /** Emotions the model learned (spoken with a token before the phonemes). */
+  emotions?: string[];
 }
 
 interface PiperConfig {
@@ -70,7 +73,13 @@ export async function importPersonal(zipUri: string): Promise<PersonalVoice> {
     if (!meta.exists || !new File(dir, 'model.onnx').exists || !new File(dir, 'config.json').exists) {
       throw new Error('This is not a Swaram voice pack. Use the swaram-voice-….zip from the Kaggle notebook.');
     }
-    const info = JSON.parse(meta.textSync()) as { format?: string; name?: string; language?: string; sample_rate?: number };
+    const info = JSON.parse(meta.textSync()) as {
+      format?: string;
+      name?: string;
+      language?: string;
+      sample_rate?: number;
+      emotions?: Record<string, string>;
+    };
     if (info.format !== 'swaram-personal/1') throw new Error(`Unsupported voice pack (${info.format ?? 'unknown format'}). Update the app.`);
     const voice: PersonalVoice = {
       id,
@@ -78,6 +87,7 @@ export async function importPersonal(zipUri: string): Promise<PersonalVoice> {
       language: info.language || 'te',
       sampleRate: info.sample_rate || 22050,
       createdAt: Date.now(),
+      emotions: info.emotions ? Object.keys(info.emotions) : [],
     };
     new File(dir, 'swaram.json').writeSync(JSON.stringify(voice));
     return voice;
@@ -112,11 +122,17 @@ export class FastVoice {
     return new FastVoice(voice, config, ms / 1000);
   }
 
-  ids(text: string): number[] {
+  /** True when this model learned the emotion (personal-voice/dataset.py adds the token in training). */
+  knows(emotion: Emotion | null | undefined): boolean {
+    return !!emotion && (this.voice.emotions ?? []).includes(emotion);
+  }
+
+  ids(text: string, emotion?: Emotion | null): number[] {
     const map = this.config.phoneme_id_map;
     const pad = map._[0];
     const ids = [map['^'][0], pad];
-    for (const ph of Array.from(teluguPhonemes(text).normalize('NFD'))) {
+    const phonemes = this.knows(emotion) ? `${EMOTION_TOKENS[emotion as Emotion]} ${teluguPhonemes(text)}` : teluguPhonemes(text);
+    for (const ph of Array.from(phonemes.normalize('NFD'))) {
       const id = map[ph];
       if (id) ids.push(id[0], pad);
     }
@@ -130,13 +146,13 @@ export class FastVoice {
   }
 
   /** One part -> 24 kHz audio. text must already be prepared (Telugu script, numbers spelled out). */
-  async speakPart(text: string, speed = 1): Promise<Float32Array> {
+  async speakPart(text: string, speed = 1, emotion?: Emotion | null): Promise<Float32Array> {
     await this.ensureLoaded();
     const inf = this.config.inference ?? {};
     const out = scratch('out.f32');
     const n = await edge().piperSynth(
       new File(voiceDir(this.voice.id), 'model.onnx').uri,
-      this.ids(text),
+      this.ids(text, emotion),
       inf.noise_scale ?? 0.667,
       (inf.length_scale ?? 1) / speed,
       inf.noise_w ?? 0.8,
