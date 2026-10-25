@@ -73,15 +73,29 @@ is used when the app renders scripts on Kaggle (Studio render)."""),
 assert "APP_PRO" in globals(), "Start this from the Swaram app (Voices -> Studio voice)."
 DATA = f"{WORK}/data"
 os.makedirs(f"{DATA}/wavs", exist_ok=True)
+# Kaggle unpacks uploaded zips, so look for the words file (or a zip that was kept).
+metas = glob.glob("/kaggle/input/**/metadata.csv", recursive=True)
 packs = glob.glob("/kaggle/input/**/swaram-pro-*.zip", recursive=True)
-assert packs, "The recordings dataset is not attached."
-with zipfile.ZipFile(packs[0]) as z:
-    z.extractall(f"{WORK}/pack")
+if metas:
+    PACK = os.path.dirname(metas[0])
+elif packs:
+    with zipfile.ZipFile(packs[0]) as z:
+        z.extractall(f"{WORK}/pack")
+    PACK = f"{WORK}/pack"
+else:
+    print(glob.glob("/kaggle/input/**", recursive=True)[:50])
+    raise AssertionError("The recordings dataset is not attached.")
 import librosa, soundfile as sf
 rows = []
-for line in open(f"{WORK}/pack/metadata.csv", encoding="utf-8").read().splitlines():
+for line in open(f"{PACK}/metadata.csv", encoding="utf-8").read().splitlines():
     name, text = line.split("|", 1)
-    wav, _ = librosa.load(f"{WORK}/pack/clips/{name}", sr=24000, mono=True)
+    src = f"{PACK}/clips/{name}"
+    if not os.path.exists(src):
+        found = glob.glob(f"{PACK}/**/{name}", recursive=True)
+        if not found:
+            continue
+        src = found[0]
+    wav, _ = librosa.load(src, sr=24000, mono=True)
     out = name.rsplit(".", 1)[0] + ".wav"
     sf.write(f"{DATA}/wavs/{out}", wav, 24000)
     rows.append(f"{out}|{text}")
