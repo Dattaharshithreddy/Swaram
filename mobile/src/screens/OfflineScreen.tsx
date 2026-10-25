@@ -35,8 +35,8 @@ import { spokenText } from '../translit';
 const INDIC = LANGUAGES.filter((l) => l.code !== 'en');
 // guidance: share of steps (from the start) that use guidance; the rest cost half.
 const QUALITY = [
-  { steps: 8, guidance: 0.6, label: 'Fast · 8' },
-  { steps: 16, guidance: 0.75, label: 'Balanced · 16' },
+  { steps: 8, guidance: 0.5, label: 'Fast · 8' },
+  { steps: 16, guidance: 0.6, label: 'Balanced · 16' },
   { steps: 32, guidance: 1.0, label: 'Best · 32' },
 ];
 // Offline voices use a shorter reading: every second of the reference is
