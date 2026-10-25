@@ -29,7 +29,7 @@ def sh(cmd):
 
 sh(f"git clone -q --depth 1 https://github.com/Dattaharshithreddy/Swaram.git {WORK}/Swaram || true")
 sh(f"git clone -q --depth 1 https://github.com/AI4Bharat/IndicF5.git {WORK}/IndicF5 || true")
-sh("pip install -q x-transformers torchdiffeq vocos==0.1.0 einops jieba pypinyin ema-pytorch librosa soundfile safetensors")
+sh("pip install -q x-transformers torchdiffeq vocos==0.1.0 einops jieba pypinyin ema-pytorch librosa soundfile safetensors onnx onnxruntime")
 os.environ["PYTHONPATH"] = f"{WORK}/IndicF5:{WORK}/Swaram/edge"
 import torch; print("GPU:", torch.cuda.is_available())
 """),
@@ -62,21 +62,61 @@ print("Done:", os.path.getsize(f"{OUT}/swaram-render.zip") // 1024, "KB")
 ]
 
 
-def main() -> None:
+PRO_CELLS = [
+    ("markdown", """# Swaram: studio voice (train the big model on one voice)
+
+Started by the Swaram app. It trains IndicF5 itself on your recordings (about
+2.5 hours on Kaggle's free GPU). The result stays in this notebook's output and
+is used when the app renders scripts on Kaggle (Studio render)."""),
+    CELLS[1],
+    ("code", """# 2. Your recordings (the private dataset the app uploaded)
+assert "APP_PRO" in globals(), "Start this from the Swaram app (Voices -> Studio voice)."
+DATA = f"{WORK}/data"
+os.makedirs(f"{DATA}/wavs", exist_ok=True)
+packs = glob.glob("/kaggle/input/**/swaram-pro-*.zip", recursive=True)
+assert packs, "The recordings dataset is not attached."
+with zipfile.ZipFile(packs[0]) as z:
+    z.extractall(f"{WORK}/pack")
+import librosa, soundfile as sf
+rows = []
+for line in open(f"{WORK}/pack/metadata.csv", encoding="utf-8").read().splitlines():
+    name, text = line.split("|", 1)
+    wav, _ = librosa.load(f"{WORK}/pack/clips/{name}", sr=24000, mono=True)
+    out = name.rsplit(".", 1)[0] + ".wav"
+    sf.write(f"{DATA}/wavs/{out}", wav, 24000)
+    rows.append(f"{out}|{text}")
+open(f"{DATA}/metadata.csv", "w", encoding="utf-8").write("\\n".join(rows))
+print(len(rows), "recordings for", APP_PRO.get("name"))
+"""),
+    ("code", """# 3. Train (about APP_PRO["hours"] hours)
+sh(f"cd {WORK}/Swaram/cloud && python finetune.py --data {DATA} --out {OUT} --id {APP_PRO['id']} --hours {APP_PRO.get('hours', 2.5)}")
+json.dump({"id": APP_PRO["id"], "name": APP_PRO.get("name", ""), "file": f"voice-model-{APP_PRO['id']}.safetensors"}, open(f"{OUT}/studio-voice.json", "w"))
+from IPython.display import Audio, display
+display(Audio(f"{OUT}/sample.wav"))
+"""),
+]
+
+
+def write(cells, name: str) -> None:
     nb = {
         "cells": [
             {"cell_type": t, "metadata": {}, "source": src.splitlines(keepends=True),
              **({"outputs": [], "execution_count": None} if t == "code" else {})}
-            for t, src in CELLS
+            for t, src in cells
         ],
         "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
                      "language_info": {"name": "python"}},
         "nbformat": 4,
         "nbformat_minor": 5,
     }
-    out = Path(__file__).with_name("swaram_render.ipynb")
+    out = Path(__file__).with_name(name)
     out.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n", "utf-8")
     print("wrote", out.name)
+
+
+def main() -> None:
+    write(CELLS, "swaram_render.ipynb")
+    write(PRO_CELLS, "swaram_pro_voice.ipynb")
 
 
 if __name__ == "__main__":

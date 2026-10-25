@@ -10,6 +10,7 @@ import { deletePersonal } from '../edge/personal';
 import { EMOTION_INFO, EMOTIONS } from '../edge/emotions';
 import { deleteVoice, emotionRecording, exportForTraining, hasRecording, recordingFile } from '../edge/store';
 import { exportVoice, importVoice, keyOf, type VoiceRef } from '../edge/voices';
+import { deleteProRecordings, proProgress } from '../edge/proVoice';
 import { languageByCode } from '../languages';
 import { useApp } from '../state';
 import { font, space, useTheme } from '../theme';
@@ -30,7 +31,9 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
   const [error, setError] = useState<string | null>(null);
   const [extras, setExtras] = useState(false);
   const lang = languageByCode(v.voice.language);
-  const training = v.kind === 'f5' ? app.trainings.find((x) => x.voiceId === v.voice.id || (!x.voiceId && x.voiceName === v.voice.name)) : undefined;
+  const training = v.kind === 'f5' ? app.trainings.find((x) => x.kind !== 'big' && (x.voiceId === v.voice.id || (!x.voiceId && x.voiceName === v.voice.name))) : undefined;
+  const studio = v.kind === 'f5' ? app.trainings.find((x) => x.kind === 'big' && x.voiceId === v.voice.id) : undefined;
+  const pro = v.kind === 'f5' ? proProgress(v.voice) : null;
   const hasFastTwin = v.kind === 'f5' && app.voices.some((o) => o.kind === 'fast' && o.voice.name.toLowerCase() === v.voice.name.toLowerCase());
   const rec = v.kind === 'f5' && hasRecording(v.voice) ? recordingFile(v.voice).uri : null;
   const avatar = v.kind === 'fast' ? { bg: t.goldBg, fg: t.goldText } : AVATAR[index % AVATAR.length];
@@ -73,7 +76,10 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
         style: 'destructive',
         onPress: () => {
           if (v.kind === 'fast') deletePersonal(v.voice);
-          else deleteVoice(v.voice);
+          else {
+            deleteVoice(v.voice);
+            deleteProRecordings(v.voice);
+          }
           app.refreshVoices();
         },
       },
@@ -93,6 +99,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
             {lang && <Badge text={lang.name} />}
             {training?.state === 'running' && <Badge text="Training" kind="gold" icon="loader" />}
             {training?.state === 'failed' && <Badge text="Training failed" kind="danger" icon="alert-triangle" />}
+            {studio?.state === 'done' && <Badge text="Studio voice" kind="gold" icon="award" />}
           </View>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${v.voice.name}`} onPress={remove} hitSlop={8} style={{ padding: 8 }}>
@@ -198,6 +205,25 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
       )}
       {v.kind === 'fast' && (v.voice.emotions?.length ?? 0) > 0 && (
         <Notice text={`Knows: ${(v.voice.emotions ?? []).map((e) => EMOTION_INFO[e as keyof typeof EMOTION_INFO]?.label ?? e).join(', ')}`} />
+      )}
+      {v.kind === 'f5' && pro && (
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12, lineHeight: 18 }}>
+            Studio voice: read about 12 minutes of sentences and the big model is trained on this voice itself (like professional cloning). Used by "Studio render on Kaggle". Free, about 3 hours on Kaggle.
+          </Text>
+          {studio?.state === 'running' && <Notice text={studio.detail ?? 'Training the studio voice on Kaggle…'} />}
+          {studio?.state === 'failed' && <Notice text={studio.detail ?? 'Studio voice training failed.'} kind="error" />}
+          {studio?.state === 'done' && <Notice text="✓ Studio voice ready. Studio renders on Kaggle use it automatically." />}
+          {studio?.state !== 'running' && (
+            <Button
+              title={pro.done === 0 ? 'Make a studio voice' : studio?.state === 'done' ? `Studio voice recordings (${pro.minutes.toFixed(0)} min)` : `Continue studio voice (${pro.minutes.toFixed(1)} min)`}
+              icon="award"
+              kind="secondary"
+              small
+              onPress={() => app.setPage({ name: 'pro', voiceId: v.voice.id })}
+            />
+          )}
+        </View>
       )}
       {v.kind === 'f5' && rec && !hasFastTwin && training?.state !== 'running' && (
         <View style={{ gap: 6 }}>

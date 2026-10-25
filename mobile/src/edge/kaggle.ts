@@ -24,8 +24,8 @@ function authHeader(auth: KaggleAuth): string {
   return `Bearer ${token}`;
 }
 
-async function call<T>(auth: KaggleAuth, method: string, body: object): Promise<T> {
-  const res = await fetch(`${API}/kernels.KernelsApiService/${method}`, {
+async function call<T>(auth: KaggleAuth, method: string, body: object, service = 'kernels.KernelsApiService'): Promise<T> {
+  const res = await fetch(`${API}/${service}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authHeader(auth) },
     body: JSON.stringify(body),
@@ -50,7 +50,7 @@ export async function pushNotebook(
   auth: KaggleAuth,
   slug: string,
   notebook: { cells: { cell_type: string; source: string | string[] }[] },
-  opts: { gpu: boolean; internet: boolean; timeoutSeconds?: number; kernelSources?: string[] },
+  opts: { gpu: boolean; internet: boolean; timeoutSeconds?: number; kernelSources?: string[]; datasetSources?: string[] },
 ): Promise<PushResult> {
   const nb = JSON.parse(JSON.stringify(notebook));
   for (const cell of nb.cells) {
@@ -70,6 +70,7 @@ export async function pushNotebook(
     ...(opts.timeoutSeconds ? { sessionTimeoutSeconds: opts.timeoutSeconds } : {}),
     // Other notebooks' output (a voice trained on the big model) mounted under /kaggle/input.
     ...(opts.kernelSources?.length ? { kernelDataSources: opts.kernelSources.map((s) => `${auth.username.trim()}/${s}`) } : {}),
+    ...(opts.datasetSources?.length ? { datasetDataSources: opts.datasetSources.map((s) => `${auth.username.trim()}/${s}`) } : {}),
   });
   if (res.error) throw new Error(`Kaggle refused the notebook: ${res.error}`);
   return res;
@@ -114,6 +115,41 @@ export async function runOutputs(auth: KaggleAuth, slug: string): Promise<{ file
     pageToken = res.nextPageToken;
   }
   return { files, log };
+}
+
+/**
+ * Creates a private dataset holding one file (the way Kaggle's own client does:
+ * reserve an upload, PUT the bytes, then create the dataset with the token).
+ * upload(url) must PUT the file's bytes to url.
+ */
+export async function createPrivateDataset(
+  auth: KaggleAuth,
+  slug: string,
+  title: string,
+  file: { name: string; bytes: number; contentType: string },
+  upload: (url: string) => Promise<void>,
+): Promise<string> {
+  const blob = await call<{ token: string; createUrl: string }>(
+    auth,
+    'StartBlobUpload',
+    { type: 'DATASET', name: file.name, contentLength: file.bytes, contentType: file.contentType, lastModifiedEpochSeconds: Math.floor(Date.now() / 1000) },
+    'blobs.BlobApiService',
+  );
+  await upload(blob.createUrl);
+  const res = await call<{ ref?: string; url?: string; status?: string; error?: string }>(
+    auth,
+    'CreateDataset',
+    { ownerSlug: auth.username.trim(), slug, title, licenseName: 'unknown', isPrivate: true, files: [{ token: blob.token }] },
+    'datasets.DatasetApiService',
+  );
+  if (res.error) throw new Error(`Kaggle refused the recordings: ${res.error}`);
+  return res.ref || `${auth.username.trim()}/${slug}`;
+}
+
+/** 'ready' once Kaggle has processed an uploaded dataset. */
+export async function datasetStatus(auth: KaggleAuth, slug: string): Promise<string> {
+  const res = await call<{ status?: string | number }>(auth, 'GetDatasetStatus', { ownerSlug: auth.username.trim(), datasetSlug: slug }, 'datasets.DatasetApiService');
+  return String(res.status ?? '').toLowerCase();
 }
 
 export function bytesToBase64(bytes: Uint8Array): string {

@@ -90,6 +90,10 @@ function saveAll(list: Training[]) {
   storeFile().writeSync(JSON.stringify(list));
 }
 
+export function saveTrainings(list: Training[]) {
+  saveAll(list);
+}
+
 function update(t: Training) {
   saveAll(listTrainings().map((x) => (x.id === t.id ? t : x)));
 }
@@ -143,7 +147,13 @@ export async function checkTraining(t: Training, creds: Credentials): Promise<Tr
   const auth: KaggleAuth = { username: creds.username || t.username, token: creds.token };
   const s = await runStatus(auth, t.slug);
   const next: Training = { ...t, checkedAt: Date.now() };
-  if (s.state === 'complete') {
+  if (s.state === 'complete' && t.kind === 'big') {
+    // A studio voice stays on Kaggle; Studio renders load it from this notebook's output.
+    const out = await runOutputs(auth, t.slug);
+    const ok = out.files.some((f) => f.fileName.endsWith(t.bigFile ?? 'voice-model'));
+    next.state = ok ? 'done' : 'failed';
+    next.detail = ok ? `Studio voice ready: renders on Kaggle now use it` : 'Kaggle finished but made no trained voice. Open the notebook on Kaggle to see what happened.';
+  } else if (s.state === 'complete') {
     const out = await runOutputs(auth, t.slug);
     const pack = out.files.find((f) => /swaram-voice-.*\.zip$/.test(f.fileName));
     if (!pack) {
@@ -168,7 +178,7 @@ export async function checkTraining(t: Training, creds: Credentials): Promise<Tr
     next.detail =
       s.state === 'queued'
         ? 'Waiting for a free GPU on Kaggle…'
-        : `Training on Kaggle · ${hours < 1 ? `${Math.round(hours * 60)} min` : `${hours.toFixed(1)} h`} so far (about ${expectedHours(t)} h in total)`;
+        : `${t.kind === 'big' ? 'Training the studio voice' : 'Training on Kaggle'} · ${hours < 1 ? `${Math.round(hours * 60)} min` : `${hours.toFixed(1)} h`} so far (about ${expectedHours(t)} h in total)`;
   }
   update(next);
   return next;

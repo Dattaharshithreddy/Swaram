@@ -41,7 +41,7 @@ import { spokenText } from './translit';
 import { friendlyError } from './errors';
 
 export type Tab = 'home' | 'studio' | 'voices' | 'settings';
-export type Page = { name: 'newVoice' } | { name: 'server' } | { name: 'emotion'; voiceId: string } | null;
+export type Page = { name: 'newVoice' } | { name: 'server' } | { name: 'emotion'; voiceId: string } | { name: 'pro'; voiceId: string } | null;
 
 /** Big-model guidance per quality preset (share of steps with guidance). */
 export const QUALITY = [

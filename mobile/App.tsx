@@ -15,6 +15,7 @@ import { PlayerProvider } from './src/components/player';
 import { Icon, type IconName } from './src/components/ui';
 import { runSelfTest } from './src/edge/selftest';
 import { EmotionScreen } from './src/screens/EmotionScreen';
+import { ProVoiceScreen } from './src/screens/ProVoiceScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { NewVoiceScreen2 } from './src/screens/NewVoiceScreen2';
 import { ServerMode } from './src/screens/ServerMode';
@@ -85,6 +86,8 @@ function Main() {
               <ServerMode />
             ) : page?.name === 'emotion' ? (
               <EmotionScreen voiceId={page.voiceId} />
+            ) : page?.name === 'pro' ? (
+              <ProVoiceScreen voiceId={page.voiceId} />
             ) : (
               <>
                 {tab === 'home' && <HomeScreen />}

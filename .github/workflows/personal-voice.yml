@@ -89,7 +89,7 @@ jobs:
       - name: Cloud render (studio quality script lines, CPU, few steps)
         working-directory: cloud
         run: |
-          python make_notebook.py && git diff --exit-code swaram_render.ipynb
+          python make_notebook.py && git diff --exit-code swaram_render.ipynb swaram_pro_voice.ipynb
           mkdir -p $WORK/render
           cp ../IndicF5/prompts/PAN_F_HAPPY_00001.wav $WORK/render/v.wav
           python - <<'PY'
@@ -104,6 +104,16 @@ jobs:
           python render.py --job $WORK/render/job.json --out $WORK/render/out
           ls -l $WORK/render/out/parts
           test -s $WORK/render/out/parts/part-00000.wav && test -s $WORK/render/out/parts/part-00003.wav
+      - name: Studio voice fine-tune (big model, 2 steps on CPU)
+        working-directory: cloud
+        run: |
+          mkdir -p $WORK/ft/wavs
+          cp $WORK/render/out/parts/part-00000.wav $WORK/ft/wavs/a.wav
+          cp $WORK/render/out/parts/part-00003.wav $WORK/ft/wavs/b.wav
+          printf 'a.wav|నమస్కారం, ఇది ఒక పరీక్ష.\nb.wav|స్పేస్ లో శాటిలైట్స్ తిరుగుతాయి.\n' > $WORK/ft/metadata.csv
+          python finetune.py --data $WORK/ft --out $WORK/ft-out --id ci --max-steps 2 --max-frames 1200
+          ls -l $WORK/ft-out
+          python -c "import sys; sys.path.insert(0, '../edge'); from swaram_edge.f5 import load_dit; load_dit('$WORK/ft-out/voice-model-ci.safetensors', 2545); print('trained weights load')"
       - name: Fine-tune Piper's Telugu voice for a few steps
         working-directory: personal-voice
         run: |
