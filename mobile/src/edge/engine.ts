@@ -125,8 +125,8 @@ export class EdgeEngine {
     readonly loadSeconds: number,
   ) {}
 
-  static async load(dir: Directory, provider: Provider = 'xnnpack', threads = 4): Promise<EdgeEngine> {
-    const ms = await native().load(dir.uri, threads, provider);
+  static async load(dir: Directory, provider: Provider = 'xnnpack', threads = 4, studio = false): Promise<EdgeEngine> {
+    const ms = await native().load(dir.uri, threads, provider, studio ? 'flow.onnx' : 'flow.int8.onnx');
     const vocabList: string[] = JSON.parse(await new File(dir, 'vocab.json').text());
     const vocab = new Map(vocabList.map((tok, i) => [tok, i] as [string, number]));
     return new EdgeEngine(vocab, ms / 1000);

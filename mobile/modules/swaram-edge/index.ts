@@ -24,7 +24,8 @@ export interface SynthTiming {
  * values, so the native side never touches JS memory off the JS thread.
  */
 export interface SwaramEdgeNative {
-  load(dir: string, threads: number, provider: string): Promise<number>;
+  /** flow: 'flow.int8.onnx' (normal) or 'flow.onnx' (Studio quality). */
+  load(dir: string, threads: number, provider: string, flow: string): Promise<number>;
   release(): Promise<void>;
   computeMel(wavPath: string, melPath: string): Promise<number>;
   synthesize(ids: number[], refMelPath: string, schedule: number[], outPath: string, opts: SynthOptions): Promise<SynthTiming>;

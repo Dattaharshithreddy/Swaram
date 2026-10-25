@@ -19,6 +19,8 @@ export interface Prefs {
   defaultVoice?: string;
   /** Studio finishing (EQ, loudness, limiter) on everything made. */
   polish: boolean;
+  /** Studio quality: full-precision model, 32 steps, full guidance (needs the extra download). */
+  studio: boolean;
 }
 
 const DEFAULTS: Prefs = {
@@ -31,6 +33,7 @@ const DEFAULTS: Prefs = {
   draftTitle: '',
   speakerVoices: {},
   polish: true,
+  studio: false,
 };
 
 function file() {

@@ -140,13 +140,15 @@ class SwaramEdgeModule : Module() {
     /** Text describing how the app last ended, if that was a crash; else null. Shown once. */
     Function("crashReport") { crashReport() }
 
-    AsyncFunction("load") { dir: String, threads: Int, provider: String, promise: Promise ->
+    AsyncFunction("load") { dir: String, threads: Int, provider: String, flow: String, promise: Promise ->
       off(modelPool, promise) {
       synchronized(lock) {
         releaseSessions()
         val t0 = SystemClock.elapsedRealtime()
         val folder = File(pathOf(dir))
-        for (name in listOf("mel.onnx", "context.onnx", "flow.int8.onnx", "vocoder.onnx")) {
+        // flow: "flow.int8.onnx" (normal) or "flow.onnx" (Studio quality, full precision)
+        val flowName = if (flow == "flow.onnx") "flow.onnx" else "flow.int8.onnx"
+        for (name in listOf("mel.onnx", "context.onnx", flowName, "vocoder.onnx")) {
           if (!File(folder, name).exists()) throw EdgeException("Missing model file $name. Download the model again.")
         }
         val mem = memoryLine()
@@ -168,8 +170,8 @@ class SwaramEdgeModule : Module() {
           mel = e.createSession(File(folder, "mel.onnx").path, options(false))
           trail("load context.onnx")
           context = e.createSession(File(folder, "context.onnx").path, options(false))
-          trail("load flow.int8.onnx")
-          step = e.createSession(File(folder, "flow.int8.onnx").path, options(true))
+          trail("load $flowName")
+          step = e.createSession(File(folder, flowName).path, options(true))
           trail("load vocoder.onnx")
           vocoder = e.createSession(File(folder, "vocoder.onnx").path, options(false))
         } catch (t: Throwable) {

@@ -133,6 +133,66 @@ export async function downloadModel(onProgress: (bytes: number, total: number, f
   }
 }
 
+// --- Studio quality (optional full-precision flow model, ~1.3 GB) -----------
+
+export const STUDIO_BASE_URL = 'https://github.com/Dattaharshithreddy/Swaram/releases/download/edge-studio/';
+export const STUDIO_BYTES_APPROX = 1_325_000_000;
+
+function studioFile(): File {
+  return new File(modelDir(), 'flow.onnx');
+}
+
+export function studioInstalled(): boolean {
+  const f = studioFile();
+  const info = new File(modelDir(), 'studio.json');
+  if (!f.exists || !info.exists) return false;
+  try {
+    return f.size === (JSON.parse(info.textSync()) as { bytes: number }).bytes;
+  } catch {
+    return false;
+  }
+}
+
+export function deleteStudio(): void {
+  for (const f of [studioFile(), new File(modelDir(), 'studio.json')]) if (f.exists) f.delete();
+}
+
+/** Downloads the Studio quality model (retrying dropped connections like the main model). */
+export async function downloadStudio(onProgress: (bytes: number, total: number) => void, signal?: { cancelled: boolean }) {
+  const dir = modelDir();
+  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+  let res: Response;
+  try {
+    res = await fetch(STUDIO_BASE_URL + 'studio.json');
+  } catch (e) {
+    throw new Error(friendlyError(e, 'download'));
+  }
+  if (!res.ok) throw new Error(res.status === 404 ? 'Studio quality isn’t published yet. Try again later.' : `Could not get Studio quality (HTTP ${res.status}).`);
+  const infoText = await res.text();
+  const info = JSON.parse(infoText) as { bytes: number };
+  const target = studioFile();
+  for (let attempt = 1; ; attempt++) {
+    if (signal?.cancelled) throw new Error('Download cancelled');
+    if (target.exists) target.delete();
+    const task = new DownloadTask(STUDIO_BASE_URL + 'flow.onnx', target);
+    const sub = task.addListener('progress', (p) => onProgress(p.bytesWritten, info.bytes));
+    try {
+      const file = await task.downloadAsync();
+      if (!file) throw new Error('Download cancelled');
+      break;
+    } catch (e) {
+      if (signal?.cancelled || attempt >= 4 || !isNetworkError(e)) throw e;
+      await new Promise((r) => setTimeout(r, 3000 * attempt));
+    } finally {
+      sub.remove();
+    }
+  }
+  if (target.size !== info.bytes) throw new Error('Studio quality did not download completely. Try again on Wi-Fi.');
+  const infoFile = new File(dir, 'studio.json');
+  if (infoFile.exists) infoFile.delete();
+  infoFile.writeSync(infoText);
+}
+
 // --- Offline voices ---------------------------------------------------------
 
 export interface OfflineVoice {

@@ -31,7 +31,7 @@ import {
 import { FastVoice, type PersonalVoice } from './edge/personal';
 import { applyPronunciations, getPrefs, type Prefs, setPrefs } from './edge/prefs';
 import { addRecent, listRecent, type RecentItem } from './edge/recent';
-import { loadEmotionData, loadVoiceData, modelDir, modelInstalled, refreshVoice, saveAudio } from './edge/store';
+import { loadEmotionData, loadVoiceData, modelDir, modelInstalled, refreshVoice, saveAudio, studioInstalled } from './edge/store';
 import { type Emotion, EMOTION_STYLE } from './edge/emotions';
 import { parseScript } from './edge/script';
 import { prepareText } from './edge/telugu';
@@ -49,6 +49,11 @@ export const QUALITY = [
   { steps: 32, guidance: 1.0, label: 'Best' },
 ];
 export const SPEEDS = [0.85, 1, 1.15];
+
+/** The steps to use: Studio quality always runs the full 32 steps. */
+export function effectiveSteps(p: { steps: number; studio?: boolean }): number {
+  return p.studio && studioInstalled() ? 32 : p.steps;
+}
 
 export function guidanceFor(steps: number) {
   return QUALITY.find((q) => q.steps === steps)?.guidance ?? 1;
@@ -136,13 +141,15 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
 
   const getEngine = useCallback(async () => {
     const provider = getPrefs().provider;
-    if (engine.current && engineProvider.current === provider) return engine.current;
+    const studio = getPrefs().studio && studioInstalled();
+    const want = `${provider}${studio ? '+studio' : ''}`;
+    if (engine.current && engineProvider.current === want) return engine.current;
     await engine.current?.release();
     engine.current = null;
     setEngineLoading(true);
     try {
-      engine.current = await EdgeEngine.load(modelDir(), provider);
-      engineProvider.current = provider;
+      engine.current = await EdgeEngine.load(modelDir(), provider, 4, studio);
+      engineProvider.current = want;
       return engine.current;
     } finally {
       setEngineLoading(false);
@@ -212,7 +219,8 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
   const speakQuick = useCallback(
     async (ref: VoiceRef, text: string, onProgress?: (done: number, total: number) => void) => {
       const p = getPrefs();
-      const opts = { steps: p.steps, guidance: guidanceFor(p.steps), speed: p.speed };
+      const steps = effectiveSteps(p);
+      const opts = { steps, guidance: guidanceFor(steps), speed: p.speed };
       // Quick speak understands the same [happy] / [pause 2s] tags as Studio (one voice).
       const pieces: { text: string; emotion: Emotion | null; pause: number }[] = [];
       for (const seg of parseScript(text)) {

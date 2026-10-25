@@ -10,6 +10,7 @@ import { useServerConfig } from '../settings';
 import { QUALITY, useApp } from '../state';
 import { font, space, useTheme } from '../theme';
 import { friendlyError } from '../errors';
+import { StudioQuality } from '../components/StudioQuality';
 
 function mask(s: string) {
   return s ? `••••${s.slice(-4)}` : 'not set';
@@ -136,10 +137,16 @@ export function SettingsTab() {
             <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 14 }}>Big-model quality</Text>
             <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
               {QUALITY.map((q) => (
-                <Chip key={q.steps} label={`${q.label} · ${q.steps}`} selected={prefs.steps === q.steps} onPress={() => updatePrefs({ steps: q.steps })} />
+                <Chip key={q.steps} label={`${q.label} · ${q.steps}`} selected={!prefs.studio && prefs.steps === q.steps} onPress={async () => {
+                  updatePrefs({ steps: q.steps, studio: false });
+                  if (prefs.studio) await app.releaseEngine();
+                }} />
               ))}
             </View>
-            <Notice text="Fewer steps are faster but rougher. Fast voices don't use this." />
+            <Notice text={prefs.studio ? 'Studio quality is on, so it always uses 32 steps. Turn it off below to use these.' : "Fewer steps are faster but rougher. Fast voices don't use this."} />
+          </View>
+          <View style={{ gap: space.sm, paddingVertical: 14, borderTopWidth: 1, borderTopColor: t.surface2 }}>
+            <StudioQuality />
           </View>
           <View style={{ gap: space.sm, paddingVertical: 14, borderTopWidth: 1, borderTopColor: t.surface2 }}>
             <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 14 }}>Processor</Text>

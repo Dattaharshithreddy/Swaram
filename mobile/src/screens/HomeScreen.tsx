@@ -10,6 +10,7 @@ import { languageByCode } from '../languages';
 import { useApp } from '../state';
 import { font, radius, space, useTheme } from '../theme';
 import { friendlyError } from '../errors';
+import { studioInstalled } from '../edge/store';
 import { expectedHours } from '../edge/kaggleTraining';
 
 export function RecentRow({ item, onRemoved }: { item: RecentItem; onRemoved?: () => void }) {
@@ -181,7 +182,7 @@ export function HomeScreen() {
                   : 'Making it on this phone…'
                 : selected?.kind === 'fast'
                   ? `${displayName(selected)} · about a second`
-                  : `Big model · ${prefs.steps === 8 ? 'Fast' : prefs.steps === 16 ? 'Balanced' : 'Best'} · ~30 s`}
+                  : prefs.studio && studioInstalled() ? 'Big model · Studio quality · ~2 min' : `Big model · ${prefs.steps === 8 ? 'Fast' : prefs.steps === 16 ? 'Balanced' : 'Best'} · ~30 s`}
             </Text>
             <Button title="Speak" icon="play" onPress={speak} busy={busy} disabled={!text.trim() || !selected} style={{ paddingHorizontal: 22 }} />
           </View>

@@ -18,6 +18,10 @@ on:
         description: "Publish the phone model files to the edge-model release"
         type: boolean
         default: true
+      studio:
+        description: "Publish the full-precision flow model (Studio quality, ~1.3 GB) to the edge-studio release"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -109,3 +113,34 @@ jobs:
             build/edge/context.onnx
             build/edge/flow.int8.onnx
             build/edge/vocoder.onnx
+
+      - name: Studio quality file
+        if: ${{ inputs.studio }}
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          p = os.path.join(os.environ["OUT"], "flow.onnx")
+          h = hashlib.sha256()
+          with open(p, "rb") as f:
+              for c in iter(lambda: f.read(1 << 20), b""):
+                  h.update(c)
+          json.dump({"file": "flow.onnx", "bytes": os.path.getsize(p), "sha256": h.hexdigest()},
+                    open(os.path.join(os.environ["OUT"], "studio.json"), "w"), indent=2)
+          print(open(os.path.join(os.environ["OUT"], "studio.json")).read())
+          PY
+
+      - name: Publish Studio quality file
+        if: ${{ inputs.studio }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: edge-studio
+          name: Swaram Studio quality model (optional)
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          body: |
+            Full-precision IndicF5 flow model for the app's optional Studio quality
+            (about 1.3 GB), from ${{ github.sha }}. Pairs with the edge-model files.
+          files: |
+            build/edge/flow.onnx
+            build/edge/studio.json

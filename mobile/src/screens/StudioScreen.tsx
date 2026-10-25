@@ -35,7 +35,8 @@ import { parseScript, speakersOf } from '../edge/script';
 import { deleteSound, importSound, listSounds, type Sound } from '../edge/sounds';
 import { parseSrt } from '../edge/srt';
 import { displayName, findVoice, keyOf, matchSpeaker, type VoiceRef } from '../edge/voices';
-import { guidanceFor, QUALITY, SPEEDS, useApp } from '../state';
+import { studioInstalled } from '../edge/store';
+import { effectiveSteps, guidanceFor, QUALITY, SPEEDS, useApp } from '../state';
 import { font, radius, space, speakerColors, useTheme } from '../theme';
 import { friendlyError } from '../errors';
 
@@ -170,8 +171,8 @@ export function StudioScreen() {
       const build = view === 'dub' ? (o: Parameters<typeof createScriptJob>[1]) => createDubJob(srt?.text ?? '', { ...o, title: title || srt?.name.replace(/\.[^.]+$/, '') }) : (o: Parameters<typeof createScriptJob>[1]) => createScriptJob(script, o);
       const job = build({
         title,
-        steps: prefs.steps,
-        guidance: guidanceFor(prefs.steps),
+        steps: effectiveSteps(prefs),
+        guidance: guidanceFor(effectiveSteps(prefs)),
         speed: prefs.speed,
         voiceFor: (sp) => {
           const r = voiceForSpeaker(sp);
@@ -370,8 +371,26 @@ export function StudioScreen() {
             <Label>Big-model quality</Label>
             <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
               {QUALITY.map((q) => (
-                <Chip key={q.steps} label={q.label} selected={prefs.steps === q.steps} onPress={() => updatePrefs({ steps: q.steps })} />
+                <Chip
+                  key={q.steps}
+                  label={q.label}
+                  selected={!(prefs.studio && studioInstalled()) && prefs.steps === q.steps}
+                  onPress={async () => {
+                    updatePrefs({ steps: q.steps, studio: false });
+                    if (prefs.studio) await app.releaseEngine();
+                  }}
+                />
               ))}
+              {studioInstalled() && (
+                <Chip
+                  label="Studio"
+                  selected={prefs.studio}
+                  onPress={async () => {
+                    updatePrefs({ studio: true });
+                    await app.releaseEngine();
+                  }}
+                />
+              )}
             </View>
           </View>
         )}
