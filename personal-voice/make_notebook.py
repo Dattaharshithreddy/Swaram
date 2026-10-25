@@ -45,7 +45,7 @@ sh(f"git clone -q --depth 1 https://github.com/Dattaharshithreddy/Swaram.git {{W
 sh(f"git clone -q --depth 1 https://github.com/AI4Bharat/IndicF5.git {{WORK}}/IndicF5 || true")
 sh(f"git clone -q https://github.com/OHF-Voice/piper1-gpl.git {{WORK}}/piper || true")
 sh(f"cd {{WORK}}/piper && git checkout -q {PIPER_COMMIT}")
-sh("pip install -q x-transformers torchdiffeq vocos==0.1.0 einops jieba pypinyin ema-pytorch onnx onnxruntime "
+sh("pip install -q x-transformers torchdiffeq vocos==0.1.0 einops jieba pypinyin ema-pytorch onnx onnxruntime pathvalidate "
    "'lightning>=2,<3' 'jsonargparse[signatures]>=4.27.7' tensorboardX 'pysilero-vad>=2.1,<3' 'cython>=3,<4'")
 sh(f"cd {{WORK}}/piper && bash build_monotonic_align.sh")
 PV = f"{{WORK}}/Swaram/personal-voice"

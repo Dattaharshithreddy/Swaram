@@ -35,7 +35,7 @@ jobs:
       - name: Install
         run: |
           pip install -q torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-          pip install -q x-transformers torchdiffeq vocos==0.1.0 einops jieba pypinyin ema-pytorch onnx onnxruntime \
+          pip install -q x-transformers torchdiffeq vocos==0.1.0 einops jieba pypinyin ema-pytorch onnx onnxruntime pathvalidate \
             safetensors huggingface_hub librosa soundfile datasets \
             'lightning>=2,<3' 'jsonargparse[signatures]>=4.27.7' tensorboardX 'pysilero-vad>=2.1,<3' 'cython>=3,<4'
           git clone -q --depth 1 https://github.com/AI4Bharat/IndicF5.git IndicF5
