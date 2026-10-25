@@ -100,6 +100,11 @@ export class FastVoice {
     readonly loadSeconds: number,
   ) {}
 
+  /** Makes sure this voice's model is loaded in the native engine (cheap if it already is). */
+  async ensureLoaded(): Promise<void> {
+    await edge().piperLoad(new File(voiceDir(this.voice.id), 'model.onnx').uri, 4);
+  }
+
   static async load(voice: PersonalVoice, threads = 4): Promise<FastVoice> {
     const dir = voiceDir(voice.id);
     const config = JSON.parse(new File(dir, 'config.json').textSync()) as PiperConfig;
@@ -126,9 +131,11 @@ export class FastVoice {
 
   /** One part -> 24 kHz audio. text must already be prepared (Telugu script, numbers spelled out). */
   async speakPart(text: string, speed = 1): Promise<Float32Array> {
+    await this.ensureLoaded();
     const inf = this.config.inference ?? {};
     const out = scratch('out.f32');
     const n = await edge().piperSynth(
+      new File(voiceDir(this.voice.id), 'model.onnx').uri,
       this.ids(text),
       inf.noise_scale ?? 0.667,
       (inf.length_scale ?? 1) / speed,

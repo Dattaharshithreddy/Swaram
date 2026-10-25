@@ -90,6 +90,13 @@ function scratch(name: string): File {
   return f;
 }
 
+/** Parts for the big model: each at most ~25 s together with the voice's reference. */
+export function chunksFor(voice: { frames: number; text: string }, text: string): string[] {
+  const refSeconds = (voice.frames * HOP) / SAMPLE_RATE;
+  const maxBytes = Math.floor((utf8Length(voice.text) / Math.max(refSeconds, 1e-3)) * (25 - refSeconds));
+  return chunkText(text, Math.max(maxBytes, 60));
+}
+
 export function writeFloats(f: File, data: Float32Array) {
   // Float32Array is little-endian on every Android device.
   f.writeSync(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
@@ -150,15 +157,13 @@ export class EdgeEngine {
   }
 
   /** The parts a text is split into for this voice (each at most ~25 s with the reference). */
-  chunks(voice: EdgeVoiceData, text: string): string[] {
-    const refSeconds = (voice.frames * HOP) / SAMPLE_RATE;
-    const maxBytes = Math.floor((utf8Length(voice.text) / Math.max(refSeconds, 1e-3)) * (25 - refSeconds));
-    return chunkText(text, Math.max(maxBytes, 60));
+  chunks(voice: { frames: number; text: string }, text: string): string[] {
+    return chunksFor(voice, text);
   }
 
   /** Writes the voice's mel where the native engine reads it; pass the uri to speakChunk. */
-  refMelFile(voice: EdgeVoiceData): string {
-    const refMel = scratch('cond.mel');
+  refMelFile(voice: EdgeVoiceData, name = 'cond'): string {
+    const refMel = scratch(`${name}.mel`);
     writeFloats(refMel, voice.mel.subarray(0, voice.frames * N_MELS));
     return refMel.uri;
   }

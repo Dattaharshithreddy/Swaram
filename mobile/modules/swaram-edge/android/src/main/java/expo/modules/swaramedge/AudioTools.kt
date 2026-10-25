@@ -182,4 +182,80 @@ object AudioTools {
     }
     return total
   }
+
+  /**
+   * Encodes a 16-bit mono WAV (as written by joinToWav) to AAC in an .m4a
+   * container: about a sixth of the size, plays everywhere (WhatsApp too).
+   */
+  fun encodeM4a(wav: File, out: File, bitrate: Int): Long {
+    val raf = RandomAccessFile(wav, "r")
+    val header = ByteArray(44)
+    raf.readFully(header)
+    val hb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
+    val rate = hb.getInt(24)
+    val channels = hb.getShort(22).toInt()
+    val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, rate, channels).apply {
+      setInteger(MediaFormat.KEY_AAC_PROFILE, android.media.MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+      setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+      setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
+    }
+    val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+    codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+    codec.start()
+    val muxer = android.media.MediaMuxer(out.path, android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+    var track = -1
+    var muxing = false
+    val info = MediaCodec.BufferInfo()
+    val total = raf.length() - 44
+    var read = 0L
+    var inputDone = false
+    var outputDone = false
+    val chunk = ByteArray(8192)
+    try {
+      while (!outputDone) {
+        if (!inputDone) {
+          val inIdx = codec.dequeueInputBuffer(10_000)
+          if (inIdx >= 0) {
+            val buf = codec.getInputBuffer(inIdx)!!
+            buf.clear()
+            val n = raf.read(chunk, 0, minOf(chunk.size, buf.remaining()))
+            if (n <= 0) {
+              codec.queueInputBuffer(inIdx, 0, 0, read * 1_000_000L / (2L * channels * rate), MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+              inputDone = true
+            } else {
+              buf.put(chunk, 0, n)
+              codec.queueInputBuffer(inIdx, 0, n, read * 1_000_000L / (2L * channels * rate), 0)
+              read += n
+            }
+          }
+        }
+        val outIdx = codec.dequeueOutputBuffer(info, 10_000)
+        when {
+          outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+            track = muxer.addTrack(codec.outputFormat)
+            muxer.start()
+            muxing = true
+          }
+          outIdx >= 0 -> {
+            val buf = codec.getOutputBuffer(outIdx)!!
+            if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) info.size = 0
+            if (info.size > 0 && muxing) {
+              buf.position(info.offset)
+              buf.limit(info.offset + info.size)
+              muxer.writeSampleData(track, buf, info)
+            }
+            codec.releaseOutputBuffer(outIdx, false)
+            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+          }
+        }
+      }
+    } finally {
+      runCatching { codec.stop() }
+      codec.release()
+      if (muxing) runCatching { muxer.stop() }
+      muxer.release()
+      raf.close()
+    }
+    return total / (2L * channels)
+  }
 }

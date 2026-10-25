@@ -2,10 +2,10 @@
   "expo": {
     "name": "Swaram",
     "slug": "swaram",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dattaharshithreddy.swaram"
@@ -36,6 +36,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "swaram"
+    "scheme": "swaram",
+    "backgroundColor": "#0E0F1A"
   }
 }

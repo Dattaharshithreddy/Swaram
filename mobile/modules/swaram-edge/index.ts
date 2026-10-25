@@ -30,6 +30,8 @@ export interface SwaramEdgeNative {
   synthesize(ids: number[], refMelPath: string, schedule: number[], outPath: string, opts: SynthOptions): Promise<SynthTiming>;
   /** Any audio file Android can play -> mono float32 at 24 kHz in outPath. Returns samples. */
   decodeAudio(src: string, outPath: string, maxSeconds: number): Promise<number>;
+  /** 16-bit WAV -> AAC .m4a. Returns samples. */
+  encodeM4a(wavPath: string, outPath: string, bitrate: number): Promise<number>;
   /** Joins float32 part files into one 16-bit WAV with cross-fades. Returns samples. */
   joinWav(parts: string[], outPath: string, fadeSamples: number): Promise<number>;
   /** Foreground service + wake lock so generation continues with the screen off. */
@@ -39,7 +41,7 @@ export interface SwaramEdgeNative {
   requestNotifications(): void;
   /** Personal fast voice (Piper/VITS ONNX). */
   piperLoad(modelPath: string, threads: number): Promise<number>;
-  piperSynth(ids: number[], noiseScale: number, lengthScale: number, noiseW: number, outPath: string): Promise<number>;
+  piperSynth(modelPath: string, ids: number[], noiseScale: number, lengthScale: number, noiseW: number, outPath: string): Promise<number>;
   /** Copies a file to Downloads/Swaram. Returns where it went. */
   saveToDownloads(src: string, displayName: string, mime: string): Promise<string>;
   unzip(zipPath: string, destDir: string): Promise<string[]>;

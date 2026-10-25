@@ -9,7 +9,8 @@ import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav, SAMPLE_RATE } from './dsp';
 import { EdgeEngine, type Provider } from './engine';
 import { File, Paths } from 'expo-file-system';
-import { createFastJob, createJob, f5Maker, fastMaker, outputFile, partsDone, runJob } from './jobs';
+import { createScriptJob, f5Maker, fastMaker, jobVoiceKeys, type MakerFor, outputFile, type PartMaker, partsDone, redoPart, runJob, srtFile } from './jobs';
+import { replaceWords } from './textrules';
 import { deletePersonal, FastVoice, importPersonal } from './personal';
 import { downloadModel, exportForTraining, loadVoiceData, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
 import { prepareText } from './telugu';
@@ -96,24 +97,6 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     log(`decoded upload samples=${n}`);
     if (Math.abs(n - 5 * SAMPLE_RATE) > SAMPLE_RATE / 10) throw new Error(`decode length ${n}`);
 
-    // Long script: stop after the first part, resume, join.
-    const script = prepareText(
-      'ఈ రోజు మనం ఒక చిన్న కథ చెప్పుకుందాం. ఒక ఊరిలో ఒక రైతు ఉండేవాడు, అతను ప్రతి రోజు పొలానికి వెళ్ళేవాడు. ' +
-        'ఒక రోజు అతనికి ఒక బంగారు గుడ్డు దొరికింది, అతను చాలా సంతోషపడ్డాడు. తర్వాత ఏమి జరిగిందో చూద్దాం.',
-      'te',
-    );
-    const job = createJob(engine, saved, reloaded, script, { steps: 2, guidance: 0.5 });
-    log(`job parts=${job.parts.length}`);
-    if (job.parts.length < 2) throw new Error('script did not split into parts');
-    let stopNow = false;
-    const first = await runJob(job, f5Maker(engine, reloaded, job), (p) => {
-      if (p.partsDone >= 1) stopNow = true;
-    }, () => stopNow);
-    log(`job stopped=${!first} done=${partsDone(job)}`);
-    const finished = await runJob(job, f5Maker(engine, reloaded, job), () => {}, () => false);
-    const out = outputFile(job);
-    log(`job finished=${finished} wav=${out.exists ? out.size : 0} bytes audio=${job.audioSeconds.toFixed(1)}s`);
-    if (!finished || !out.exists || (out.size ?? 0) < 44 + 2 * SAMPLE_RATE) throw new Error('job output missing');
     // Export for training (zip of the recording + its words).
     const exported = await exportForTraining(saved);
     log(`export for training ${new File(exported).size} bytes`);
@@ -127,13 +110,56 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     const fastOut = await fast.speak(prepareText('ఈ రోజు వాతావరణం చాలా బాగుంది. మనం బయటికి వెళ్దాం.', 'te'));
     log(`fast voice audio=${(fastOut.wav.length / SAMPLE_RATE).toFixed(2)}s in ${fastOut.seconds.toFixed(2)}s load=${fast.loadSeconds.toFixed(2)}s`);
     if (fastOut.wav.length < SAMPLE_RATE / 2 || !fastOut.wav.every(Number.isFinite)) throw new Error('fast voice output bad');
-    const fastJob = createFastJob(fast, pv, script);
-    const fastDone = await runJob(fastJob, fastMaker(fast), () => {}, () => false);
-    log(`fast long script finished=${fastDone} parts=${fastJob.parts.length} audio=${fastJob.audioSeconds.toFixed(1)}s compute=${fastJob.computeSeconds.toFixed(1)}s`);
-    if (!fastDone || !outputFile(fastJob).exists) throw new Error('fast job output missing');
+
+    // Multi-voice script: big-model voice ("Self test") and fast voice ("CI test"), with a pause.
+    const opts = { steps: 2, guidance: 0.5, speed: 1 };
+    const makers = new Map<string, PartMaker>([
+      [`f5:${saved.id}`, f5Maker(engine, reloaded, opts, 'cond-selftest')],
+      [`fast:${pv.id}`, fastMaker(fast, 1.1)],
+    ]);
+    const makerFor: MakerFor = async (key) => {
+      const m = makers.get(key);
+      if (!m) throw new Error(`no maker for ${key}`);
+      return m;
+    };
+    const script =
+      'Self test: ఈ రోజు మనం ఒక చిన్న కథ చెప్పుకుందాం.\n' +
+      'CI test: ఒక ఊరిలో ఒక రైతు ఉండేవాడు, అతను ప్రతి రోజు పొలానికి వెళ్ళేవాడు.\n[pause 1s]\n' +
+      'Self test: ఒక రోజు అతనికి ఒక బంగారు గుడ్డు దొరికింది. Harshith 25 rupayalu.';
+    const job = createScriptJob(script, {
+      ...opts,
+      title: 'Self test dialogue',
+      voiceFor: (sp) => (sp === 'Self test' ? `f5:${saved.id}` : sp === 'CI test' ? `fast:${pv.id}` : undefined),
+      prepare: (text, language) =>
+        prepareText(spokenText(replaceWords(text, [{ from: 'Harshith', to: 'హర్షిత్' }]), language), language),
+    });
+    log(`dialogue parts=${job.parts.length} voices=${jobVoiceKeys(job).length} pauses=${job.parts.map((p) => p.pauseAfter).join(',')}`);
+    if (jobVoiceKeys(job).length !== 2 || !job.parts.some((p) => p.pauseAfter >= 1)) throw new Error('script parsing');
+    let stopNow = false;
+    const first = await runJob(job, makerFor, (p) => {
+      if (p.partsDone >= 1) stopNow = true;
+    }, () => stopNow);
+    log(`dialogue stopped=${!first} done=${partsDone(job)}`);
+    const finished = await runJob(job, makerFor, () => {}, () => false);
+    const out = outputFile(job);
+    log(`dialogue finished=${finished} wav=${out.exists ? out.size : 0} bytes audio=${job.audioSeconds.toFixed(1)}s srt=${srtFile(job).exists}`);
+    if (!finished || !out.exists || (out.size ?? 0) < 44 + 2 * SAMPLE_RATE || !srtFile(job).exists) throw new Error('dialogue output missing');
+    const srt = srtFile(job).textSync();
+    if (!srt.includes('-->') || !srt.includes('CI test:')) throw new Error(`bad srt: ${srt.slice(0, 200)}`);
+
+    // Redo one line with new words, and change a line's voice.
+    await redoPart(job, 1, makerFor, 'ఒక ఊరిలో ఒక రైతు ఉండేవాడు.');
+    log(`redo line ok, audio=${job.audioSeconds.toFixed(1)}s`);
+
+    // Small file for sharing.
+    const m4a = new File(Paths.cache, 'selftest.m4a');
+    if (m4a.exists) m4a.delete();
+    await SwaramEdge.encodeM4a(out.uri, m4a.uri, 96000);
+    log(`m4a ${m4a.size} bytes vs wav ${out.size}`);
+    if (!m4a.exists || (m4a.size ?? 0) < 1000 || (m4a.size ?? 0) > (out.size ?? 0) / 2) throw new Error('m4a export');
     deletePersonal(pv);
 
-    log('OK all checks passed (speak, upload decode, long script resume + join, export, personal fast voice)');
+    log('OK all checks passed (speak, upload decode, export, fast voice, two-voice script with pause, stop/resume, subtitles, redo line, m4a)');
     await engine.release();
   } catch (e) {
     log(`FAIL ${e instanceof Error ? `${e.message} ${e.stack ?? ''}` : String(e)}`.replace(/\n/g, ' | '));

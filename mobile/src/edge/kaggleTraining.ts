@@ -23,6 +23,8 @@ export interface Training {
   username: string;
   url?: string;
   voiceName: string;
+  /** The big-model voice it was trained from. */
+  voiceId?: string;
   startedAt: number;
   state: 'running' | 'done' | 'failed';
   detail?: string;
@@ -97,6 +99,7 @@ export async function startTraining(voice: OfflineVoice, creds: Credentials): Pr
     username: creds.username.trim(),
     url: res.url || `https://www.kaggle.com/code/${creds.username.trim()}/${slug}`,
     voiceName: voice.name,
+    voiceId: voice.id,
     startedAt: Date.now(),
     state: 'running',
     detail: 'Starting on Kaggle…',

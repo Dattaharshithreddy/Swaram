@@ -1,77 +1,55 @@
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+  useFonts,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { api, type VoiceProfile } from './src/api';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { PlayerProvider } from './src/components/player';
+import { Icon, type IconName } from './src/components/ui';
 import { runSelfTest } from './src/edge/selftest';
-import { OfflineScreen } from './src/screens/OfflineScreen';
-import { SettingsScreen } from './src/screens/SettingsScreen';
-import { SpeakScreen } from './src/screens/SpeakScreen';
-import { VoicesScreen } from './src/screens/VoicesScreen';
-import { useServerConfig } from './src/settings';
-import { useTheme } from './src/theme';
+import { HomeScreen } from './src/screens/HomeScreen';
+import { NewVoiceScreen2 } from './src/screens/NewVoiceScreen2';
+import { ServerMode } from './src/screens/ServerMode';
+import { SettingsTab } from './src/screens/SettingsTab';
+import { StudioScreen } from './src/screens/StudioScreen';
+import { VoicesTab } from './src/screens/VoicesTab';
+import { AppProvider, type Tab, useApp } from './src/state';
+import { font, useTheme } from './src/theme';
 
-type Tab = 'speak' | 'voices' | 'offline' | 'settings';
-
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'speak', label: 'Speak' },
-  { key: 'voices', label: 'Voices' },
-  { key: 'offline', label: 'Offline' },
-  { key: 'settings', label: 'Settings' },
+const TABS: { key: Tab; label: string; icon: IconName }[] = [
+  { key: 'home', label: 'Home', icon: 'home' },
+  { key: 'studio', label: 'Studio', icon: 'file-text' },
+  { key: 'voices', label: 'Voices', icon: 'mic' },
+  { key: 'settings', label: 'Settings', icon: 'sliders' },
 ];
 
 export default function App() {
-  return (
-    <SafeAreaProvider>
-      <Main />
-    </SafeAreaProvider>
-  );
-}
-
-function Main() {
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
+  });
   const t = useTheme();
-  const { config, loaded, save } = useServerConfig();
-  const [tab, setTab] = useState<Tab>('speak');
-  const [voices, setVoices] = useState<VoiceProfile[]>([]);
-  const [loadingVoices, setLoadingVoices] = useState(false);
-  const [voicesError, setVoicesError] = useState<string | null>(null);
-
-  const reloadVoices = useCallback(async () => {
-    if (!config.url) {
-      setVoices([]);
-      return;
-    }
-    setLoadingVoices(true);
-    setVoicesError(null);
-    try {
-      setVoices(await api.listVoices(config));
-    } catch (e) {
-      setVoicesError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingVoices(false);
-    }
-  }, [config]);
 
   // swaram://selftest[?provider=cpu] runs the offline engine end to end (used by CI).
   useEffect(() => {
     void Linking.getInitialURL().then((url) => {
       if (!url?.startsWith('swaram://selftest')) return;
       const provider = /provider=(cpu|xnnpack|nnapi)/.exec(url)?.[1] as 'cpu' | 'xnnpack' | 'nnapi' | undefined;
-      setTab('offline');
       void runSelfTest(provider ?? 'xnnpack');
     });
   }, []);
 
-  useEffect(() => {
-    if (loaded) void reloadVoices();
-  }, [loaded, reloadVoices]);
-
-  useEffect(() => {
-    if (loaded && !config.url) setTab('settings');
-  }, [loaded, config.url]);
-
-  if (!loaded) {
+  if (!fontsLoaded) {
     return (
       <View style={[styles.center, { backgroundColor: t.bg }]}>
         <ActivityIndicator color={t.accent} />
@@ -80,41 +58,58 @@ function Main() {
   }
 
   return (
+    <SafeAreaProvider>
+      <AppProvider>
+        <PlayerProvider>
+          <Main />
+        </PlayerProvider>
+      </AppProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function Main() {
+  const t = useTheme();
+  const { tab, setTab, page, setPage } = useApp();
+
+  return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={['top', 'left', 'right']}>
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ErrorBoundary resetKey={tab}>
-        <View style={{ flex: 1 }}>
-          {tab === 'speak' && <SpeakScreen config={config} voices={voices} onGoToVoices={() => setTab('voices')} />}
-          {tab === 'voices' && (
-            <VoicesScreen
-              config={config}
-              voices={voices}
-              loading={loadingVoices}
-              error={voicesError}
-              reload={reloadVoices}
-            />
-          )}
-          {tab === 'offline' && <OfflineScreen />}
-          {tab === 'settings' && <SettingsScreen config={config} onSave={save} />}
-        </View>
+        <ErrorBoundary resetKey={`${tab}-${page?.name ?? ''}`}>
+          <View style={{ flex: 1 }}>
+            {page?.name === 'newVoice' ? (
+              <NewVoiceScreen2 />
+            ) : page?.name === 'server' ? (
+              <ServerMode />
+            ) : (
+              <>
+                {tab === 'home' && <HomeScreen />}
+                {tab === 'studio' && <StudioScreen />}
+                {tab === 'voices' && <VoicesTab />}
+                {tab === 'settings' && <SettingsTab />}
+              </>
+            )}
+          </View>
         </ErrorBoundary>
       </KeyboardAvoidingView>
-      <SafeAreaView edges={['bottom']} style={[styles.tabBar, { borderColor: t.line, backgroundColor: t.surface }]}>
+      <SafeAreaView edges={['bottom']} style={[styles.tabBar, { borderColor: '#1F2236', backgroundColor: t.tab }]}>
         {TABS.map((item) => {
-          const active = item.key === tab;
+          const active = item.key === tab && !page;
           return (
             <Pressable
               key={item.key}
               accessibilityRole="tab"
+              accessibilityLabel={item.label}
               accessibilityState={{ selected: active }}
-              onPress={() => setTab(item.key)}
+              onPress={() => {
+                setPage(null);
+                setTab(item.key);
+              }}
               style={styles.tab}
             >
-              <View style={[styles.tabDot, { backgroundColor: active ? t.accent : 'transparent' }]} />
-              <Text style={{ color: active ? t.ink : t.soft, fontWeight: active ? '800' : '600', fontSize: 14 }}>
-                {item.label}
-              </Text>
+              <Icon name={item.icon} size={22} color={active ? t.accent : t.faint} />
+              <Text style={{ color: active ? t.accent : t.faint, fontFamily: active ? font.bold : font.semibold, fontSize: 11 }}>{item.label}</Text>
             </Pressable>
           );
         })}
@@ -126,6 +121,5 @@ function Main() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   tabBar: { flexDirection: 'row', borderTopWidth: 1 },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 10, gap: 4 },
-  tabDot: { width: 18, height: 3, borderRadius: 2 },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 10, paddingBottom: 8, gap: 4, minHeight: 60 },
 });

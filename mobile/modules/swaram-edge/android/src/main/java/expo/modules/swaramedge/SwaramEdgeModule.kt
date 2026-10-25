@@ -68,8 +68,8 @@ class SwaramEdgeModule : Module() {
   private var vocoder: OrtSession? = null
   private val lock = Any()
   // Personal fast voice (Piper/VITS): its own session and lock.
-  private var piper: OrtSession? = null
-  private var piperPath: String? = null
+  // Personal fast voices (Piper/VITS): a few stay loaded, so dialogue between voices doesn't reload them.
+  private val piperSessions = LinkedHashMap<String, OrtSession>(4, 0.75f, true)
   private val piperLock = Any()
 
   private val appCtx: Context
@@ -213,9 +213,7 @@ class SwaramEdgeModule : Module() {
     AsyncFunction("piperLoad") { modelPath: String, threads: Int ->
       synchronized(piperLock) {
         val path = pathOf(modelPath)
-        if (piper != null && piperPath == path) return@synchronized 0.0
-        runCatching { piper?.close() }
-        piper = null
+        if (piperSessions.containsKey(path)) return@synchronized 0.0
         val t0 = SystemClock.elapsedRealtime()
         trail("piper load $path")
         try {
@@ -224,8 +222,11 @@ class SwaramEdgeModule : Module() {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.EXTENDED_OPT)
             setIntraOpNumThreads(threads)
           }
-          piper = e.createSession(path, opts)
-          piperPath = path
+          while (piperSessions.size >= 3) {
+            val oldest = piperSessions.keys.first()
+            runCatching { piperSessions.remove(oldest)?.close() }
+          }
+          piperSessions[path] = e.createSession(path, opts)
         } catch (t: Throwable) {
           trail("piper load failed: $t")
           throw EdgeException("Could not load the personal voice: ${t.message}", t)
@@ -235,9 +236,9 @@ class SwaramEdgeModule : Module() {
     }
 
     /** Phoneme ids -> float32 audio at the model's rate in outPath. Returns samples. */
-    AsyncFunction("piperSynth") { ids: List<Int>, noiseScale: Double, lengthScale: Double, noiseW: Double, outPath: String ->
+    AsyncFunction("piperSynth") { modelPath: String, ids: List<Int>, noiseScale: Double, lengthScale: Double, noiseW: Double, outPath: String ->
       synchronized(piperLock) {
-        val session = piper ?: throw EdgeException("Personal voice not loaded")
+        val session = piperSessions[pathOf(modelPath)] ?: throw EdgeException("Personal voice not loaded")
         val e = env ?: throw EdgeException("Personal voice not loaded")
         try {
           val idArr = LongArray(ids.size) { ids[it].toLong() }
@@ -345,6 +346,16 @@ class SwaramEdgeModule : Module() {
       } catch (t: Throwable) {
         trail("decode failed: $t")
         throw EdgeException("Could not read this audio file: ${t.message}", t)
+      }
+    }
+
+    /** 16-bit WAV -> AAC .m4a (much smaller). Returns samples. */
+    AsyncFunction("encodeM4a") { wavPath: String, outPath: String, bitrate: Int ->
+      try {
+        AudioTools.encodeM4a(File(pathOf(wavPath)), File(pathOf(outPath)), bitrate).toDouble()
+      } catch (t: Throwable) {
+        trail("m4a failed: $t")
+        throw EdgeException("Could not make the M4A file: ${t.message}", t)
       }
     }
 
@@ -582,9 +593,8 @@ class SwaramEdgeModule : Module() {
 
   private fun releasePiper() {
     synchronized(piperLock) {
-      runCatching { piper?.close() }
-      piper = null
-      piperPath = null
+      piperSessions.values.forEach { runCatching { it.close() } }
+      piperSessions.clear()
     }
   }
 
