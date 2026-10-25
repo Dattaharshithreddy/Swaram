@@ -9,7 +9,7 @@
  */
 import { type Directory, File, Paths } from 'expo-file-system';
 import { SwaramEdge } from '../../modules/swaram-edge';
-import { crossFade, rms, SAMPLE_RATE, trimSilence, utf8Length } from './dsp';
+import { crossFade, rms, SAMPLE_RATE, shortenPauses, trimSilence, utf8Length } from './dsp';
 
 const HOP = 256;
 const N_MELS = 100;
@@ -90,10 +90,15 @@ function scratch(name: string): File {
   return f;
 }
 
-/** Parts for the big model: each at most ~25 s together with the voice's reference. */
+/**
+ * Parts for the big model: about a sentence or two, at most ~12 s of new speech
+ * (and ~25 s with the reference). Long parts are where the model starts to
+ * repeat syllables and leave gaps.
+ */
+export const MAX_PART_SECONDS = 12;
 export function chunksFor(voice: { frames: number; text: string }, text: string): string[] {
   const refSeconds = (voice.frames * HOP) / SAMPLE_RATE;
-  const maxBytes = Math.floor((utf8Length(voice.text) / Math.max(refSeconds, 1e-3)) * (25 - refSeconds));
+  const maxBytes = Math.floor((utf8Length(voice.text) / Math.max(refSeconds, 1e-3)) * Math.min(MAX_PART_SECONDS, 25 - refSeconds));
   return chunkText(text, Math.max(maxBytes, 60));
 }
 
@@ -133,7 +138,7 @@ export class EdgeEngine {
 
   /** wav: mono float32 at 24 kHz. */
   async makeVoice(wav: Float32Array, refText: string, maxSeconds = 15): Promise<EdgeVoiceData> {
-    let clip = trimSilence(wav).slice(0, Math.floor(maxSeconds * SAMPLE_RATE));
+    let clip = shortenPauses(trimSilence(wav)).slice(0, Math.floor(maxSeconds * SAMPLE_RATE));
     const level = rms(clip);
     if (level < TARGET_RMS) {
       const g = TARGET_RMS / level;

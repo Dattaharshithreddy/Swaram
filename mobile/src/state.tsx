@@ -31,7 +31,7 @@ import {
 import { FastVoice, type PersonalVoice } from './edge/personal';
 import { applyPronunciations, getPrefs, type Prefs, setPrefs } from './edge/prefs';
 import { addRecent, listRecent, type RecentItem } from './edge/recent';
-import { loadEmotionData, loadVoiceData, modelDir, modelInstalled, saveAudio } from './edge/store';
+import { loadEmotionData, loadVoiceData, modelDir, modelInstalled, refreshVoice, saveAudio } from './edge/store';
 import { type Emotion, EMOTION_STYLE } from './edge/emotions';
 import { parseScript } from './edge/script';
 import { prepareText } from './edge/telugu';
@@ -184,6 +184,11 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
         } else {
           if (!modelInstalled()) throw new Error('Download the offline model in Settings to use big-model voices.');
           const eng = await getEngine();
+          const voice = await refreshVoice(ref.voice, (clip, text) => eng.makeVoice(clip, text));
+          if (voice !== ref.voice) {
+            ref.voice = voice;
+            setVoices(listAllVoices());
+          }
           const take = emotion ? await loadEmotionData(ref.voice, emotion) : null;
           maker = take
             ? f5Maker(eng, take, base, `cond-${ref.voice.id}-${emotion}`)

@@ -145,6 +145,35 @@ export interface OfflineVoice {
   createdAt: number;
   /** Extra recordings in other tones (see emotions.ts): words, length and level of each. */
   emotions?: Partial<Record<Emotion, { text: string; frames: number; rms: number }>>;
+  /** How the reference was prepared; 2 = long pauses shortened (older voices are redone from the recording). */
+  prep?: number;
+}
+
+export const CURRENT_PREP = 2;
+
+/**
+ * Voices made before pauses were shortened are redone once from their saved
+ * recording, so they read more smoothly. Returns the updated voice (or the same one).
+ */
+export async function refreshVoice(
+  v: OfflineVoice,
+  make: (clip: Float32Array, text: string) => Promise<EdgeVoiceData>,
+): Promise<OfflineVoice> {
+  if ((v.prep ?? 1) >= CURRENT_PREP || !hasRecording(v) || !SwaramEdge) return v;
+  try {
+    const tmp = new File(Paths.cache, `swaram-refresh-${v.id}.f32`);
+    if (tmp.exists) tmp.delete();
+    await SwaramEdge.decodeAudio(recordingFile(v).uri, tmp.uri, 30);
+    const bytes = await tmp.bytes();
+    const clip = new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const data = await make(clip, v.text);
+    const next: OfflineVoice = { ...v, frames: data.frames, rms: data.rms, text: data.text, prep: CURRENT_PREP };
+    new File(voicesDir(), `${v.id}.mel`).writeSync(new Uint8Array(data.mel.buffer, data.mel.byteOffset, data.mel.byteLength));
+    new File(voicesDir(), `${v.id}.json`).writeSync(JSON.stringify(next));
+    return next;
+  } catch {
+    return v; // keep using the old version
+  }
 }
 
 export function listVoices(): OfflineVoice[] {
@@ -174,6 +203,7 @@ export function saveVoice(name: string, language: string, data: EdgeVoiceData, c
     rms: data.rms,
     frames: data.frames,
     createdAt: Date.now(),
+    prep: CURRENT_PREP,
   };
   new File(dir, `${id}.mel`).writeSync(new Uint8Array(data.mel.buffer, data.mel.byteOffset, data.mel.byteLength));
   new File(dir, `${id}.json`).writeSync(JSON.stringify(meta));

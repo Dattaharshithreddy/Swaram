@@ -45,6 +45,53 @@ export function trimSilence(wav: Float32Array, thresholdDb = -42, keepMs = 50): 
   return wav.subarray(Math.max(0, first * frame - keep), Math.min(wav.length, (last + 1) * frame + keep));
 }
 
+/**
+ * Long pauses inside the reference (stopping between words while reading) are
+ * copied by the model as odd gaps and slow, stretched speech, so each pause is
+ * cut down to at most maxPauseMs.
+ */
+export function shortenPauses(wav: Float32Array, maxPauseMs = 250): Float32Array {
+  const frame = Math.floor(0.02 * SAMPLE_RATE);
+  const n = Math.floor(wav.length / frame);
+  if (n < 5) return wav;
+  const db: number[] = [];
+  for (let f = 0; f < n; f++) {
+    let s = 0;
+    for (let i = f * frame; i < (f + 1) * frame; i++) s += wav[i] * wav[i];
+    db.push(20 * Math.log10(Math.sqrt(s / frame + 1e-12)));
+  }
+  const loud = [...db].sort((a, b) => b - a)[Math.floor(n * 0.1)];
+  const threshold = Math.max(-45, loud - 30);
+  const maxFrames = Math.max(1, Math.round(maxPauseMs / 20));
+  const keep: [number, number][] = [];
+  let f = 0;
+  while (f < n) {
+    if (db[f] >= threshold) {
+      const start = f;
+      while (f < n && db[f] >= threshold) f++;
+      keep.push([start * frame, f * frame]);
+    } else {
+      const start = f;
+      while (f < n && db[f] < threshold) f++;
+      const len = f - start;
+      const kept = Math.min(len, maxFrames);
+      // Keep the middle of the pause so word endings and breaths stay intact.
+      const from = start + Math.floor((len - kept) / 2);
+      keep.push([from * frame, (from + kept) * frame]);
+    }
+  }
+  keep.push([n * frame, wav.length]);
+  const total = keep.reduce((a, [x, y]) => a + (y - x), 0);
+  if (total >= wav.length) return wav;
+  const out = new Float32Array(total);
+  let o = 0;
+  for (const [x, y] of keep) {
+    out.set(wav.subarray(x, y), o);
+    o += y - x;
+  }
+  return out;
+}
+
 export function crossFade(pieces: Float32Array[], seconds = 0.15): Float32Array {
   if (pieces.length === 0) return new Float32Array(0);
   let out = pieces[0];
