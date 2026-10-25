@@ -112,30 +112,47 @@ def main() -> None:
 
     t0 = time.time()
     done = 0
+    bad = 0
+    fp32_note = False
     amp = torch.autocast("cuda", dtype=torch.float16) if device == "cuda" else torch.autocast("cpu", enabled=False)
     for b in range(0, len(todo), args.batch):
         batch = todo[b : b + args.batch]
         durs = [min(ref_frames + int(ref_frames / ref_bytes * len(s.encode("utf-8"))), 4096) for _, s in batch]
-        with torch.no_grad(), amp:
-            mel, _ = cfm.sample(
-                cond=ref_mel.expand(len(batch), -1, -1),
-                text=[ref_text + s for _, s in batch],
-                duration=torch.tensor(durs, device=device),
-                lens=torch.full((len(batch),), ref_frames, device=device, dtype=torch.long),
-                steps=args.steps,
-                cfg_strength=2.0,
-                sway_sampling_coef=-1.0,
-            )
+        def sample(autocast):
+            with torch.no_grad(), autocast:
+                m, _ = cfm.sample(
+                    cond=ref_mel.expand(len(batch), -1, -1),
+                    text=[ref_text + s for _, s in batch],
+                    duration=torch.tensor(durs, device=device),
+                    lens=torch.full((len(batch),), ref_frames, device=device, dtype=torch.long),
+                    steps=args.steps,
+                    cfg_strength=2.0,
+                    sway_sampling_coef=-1.0,
+                )
+            return m.float()
+
+        mel = sample(amp)
+        if not torch.isfinite(mel).all():
+            # Half precision overflowed (it happens on T4s): make this batch again at full precision.
+            if not fp32_note:
+                print("half precision gave invalid audio; using full precision", flush=True)
+                fp32_note = True
+            amp = torch.autocast("cuda", enabled=False) if device == "cuda" else amp
+            mel = sample(amp)
+        with torch.no_grad():
             for k, (i, s) in enumerate(batch):
-                gen = mel[k : k + 1, ref_frames : durs[k]].float().permute(0, 2, 1)
-                wav = vocos.decode(gen)[0].float().cpu().numpy()
+                gen = mel[k : k + 1, ref_frames : durs[k]].permute(0, 2, 1)
+                wav = vocos.decode(gen)[0].float().cpu().numpy()  # the vocoder always at full precision
                 if ref_rms < TARGET_RMS:
                     wav = wav * (ref_rms / TARGET_RMS)
                 if not np.isfinite(wav).all() or np.abs(wav).max() < 1e-3:
                     print(f"skipping s{i:05d}: silent or invalid")
+                    bad += 1
                     continue
                 sf.write(out / "wav" / f"s{i:05d}.wav", np.clip(wav, -1, 1), SR)
                 done += 1
+        if bad >= 24 and done == 0:
+            raise SystemExit(f"The first {bad} sentences all came out silent or invalid; stopping instead of wasting GPU time.")
         rate = (time.time() - t0) / max(1, done)
         print(f"{done}/{len(todo)} done, {rate:.2f} s per sentence, about {rate * (len(todo) - done) / 60:.0f} min left", flush=True)
 

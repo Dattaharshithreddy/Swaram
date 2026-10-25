@@ -1,0 +1,38 @@
+name: Kaggle fast voice check
+
+# Renders two lines with cloud/swaram_render.ipynb on a real Kaggle GPU, the
+# same way the app's "Studio render on Kaggle" does, and checks the audio.
+# Uses about 10-15 minutes of the account's free GPU time; run by hand.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Render on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set +e
+          node --experimental-strip-types scripts/kaggle-fastvoice-test.ts > out.txt 2>&1
+          code=$?
+          cat out.txt
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Fast voice check::$(grep -v Warning out.txt | tail -25 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fast-voice
+          path: mobile/render-out/*.wav
+          if-no-files-found: ignore
