@@ -8,6 +8,7 @@ import { space } from '../theme';
 import { SettingsScreen } from './SettingsScreen';
 import { SpeakScreen } from './SpeakScreen';
 import { VoicesScreen } from './VoicesScreen';
+import { friendlyError } from '../errors';
 
 type Sub = 'speak' | 'voices' | 'connection';
 
@@ -27,7 +28,7 @@ export function ServerMode() {
     try {
       setVoices(await api.listVoices(config));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setLoading(false);
     }

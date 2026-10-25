@@ -2,6 +2,7 @@
 import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav } from './dsp';
+import { friendlyError, isNetworkError } from '../errors';
 import { type Emotion, EMOTIONS } from './emotions';
 import type { EdgeVoiceData } from './engine';
 
@@ -73,7 +74,12 @@ export async function downloadModel(onProgress: (bytes: number, total: number, f
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
 
   const manifestFile = new File(dir, 'manifest.json');
-  const res = await fetch(MODEL_BASE_URL + 'manifest.json');
+  let res: Response;
+  try {
+    res = await fetch(MODEL_BASE_URL + 'manifest.json');
+  } catch (e) {
+    throw new Error(friendlyError(e, 'download'));
+  }
   if (!res.ok) {
     throw new Error(
       res.status === 404
@@ -103,14 +109,21 @@ export async function downloadModel(onProgress: (bytes: number, total: number, f
       onProgress(done, total, name);
       continue;
     }
-    if (target.exists) target.delete();
-    const task = new DownloadTask(MODEL_BASE_URL + name, target);
-    const sub = task.addListener('progress', (p) => onProgress(done + p.bytesWritten, total, name));
-    try {
-      const file = await task.downloadAsync();
-      if (!file) throw new Error('Download cancelled');
-    } finally {
-      sub.remove();
+    // A dropped connection is retried a few times (that file restarts; finished files are kept).
+    for (let attempt = 1; ; attempt++) {
+      if (target.exists) target.delete();
+      const task = new DownloadTask(MODEL_BASE_URL + name, target);
+      const sub = task.addListener('progress', (p) => onProgress(done + p.bytesWritten, total, name));
+      try {
+        const file = await task.downloadAsync();
+        if (!file) throw new Error('Download cancelled');
+        break;
+      } catch (e) {
+        if (signal?.cancelled || attempt >= 4 || !isNetworkError(e)) throw e;
+        await new Promise((r) => setTimeout(r, 3000 * attempt));
+      } finally {
+        sub.remove();
+      }
     }
     if (expected !== undefined && target.size !== expected) {
       throw new Error(`${name} did not download completely. Try again on Wi-Fi.`);

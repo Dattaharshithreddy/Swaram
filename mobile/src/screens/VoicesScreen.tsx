@@ -5,6 +5,7 @@ import { Body, Button, Card, Label, Notice, Title } from '../components/ui';
 import { languageByCode } from '../languages';
 import { space, useTheme } from '../theme';
 import { NewVoiceScreen } from './NewVoiceScreen';
+import { friendlyError } from '../errors';
 
 export function VoicesScreen({
   config,
@@ -44,7 +45,7 @@ export function VoicesScreen({
       setConfirmDelete(null);
       reload();
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : String(e));
+      setDeleteError(friendlyError(e));
     }
   }
 

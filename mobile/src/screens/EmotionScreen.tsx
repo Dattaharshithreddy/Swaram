@@ -12,6 +12,7 @@ import { useApp } from '../state';
 import { font, space, useTheme } from '../theme';
 import { spokenText } from '../translit';
 import { UploadClip } from './UploadClip';
+import { friendlyError } from '../errors';
 
 function Bars({ levels }: { levels: number[] }) {
   const t = useTheme();
@@ -77,7 +78,7 @@ export function EmotionScreen({ voiceId }: { voiceId: string }) {
       const next = EMOTIONS.find((e) => e !== emotion && !voice.emotions?.[e]);
       if (next) setEmotion(next);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }

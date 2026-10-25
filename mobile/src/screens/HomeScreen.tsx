@@ -9,6 +9,7 @@ import { displayName, keyOf } from '../edge/voices';
 import { languageByCode } from '../languages';
 import { useApp } from '../state';
 import { font, radius, space, useTheme } from '../theme';
+import { friendlyError } from '../errors';
 
 export function RecentRow({ item, onRemoved }: { item: RecentItem; onRemoved?: () => void }) {
   const t = useTheme();
@@ -75,7 +76,7 @@ export function HomeScreen() {
       const item = await app.speakQuick(selected, text, (done, total) => setProgress({ done, total }));
       await player.toggle(item.uri);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
       setProgress(null);

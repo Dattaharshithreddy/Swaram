@@ -8,6 +8,7 @@ import { Body, Button, Chip, Field, Label, Notice } from '../components/ui';
 import { encodeWav, SAMPLE_RATE } from '../edge/dsp';
 import { readFloats } from '../edge/engine';
 import { space } from '../theme';
+import { friendlyError } from '../errors';
 
 const MAX_FILE_SECONDS = 600;
 const LENGTHS = [5, 6, 8, 10];
@@ -57,7 +58,7 @@ export function UploadClip({ onClip }: { onClip: (clip: Float32Array | null) => 
       out.delete();
     } catch (e) {
       setAudio(null);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }

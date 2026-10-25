@@ -13,6 +13,7 @@ import { useApp } from '../state';
 import { font, radius, space, useTheme } from '../theme';
 import { spokenText } from '../translit';
 import { UploadClip } from './UploadClip';
+import { friendlyError } from '../errors';
 
 const INDIC = LANGUAGES.filter((l) => l.code !== 'en');
 // A short reading: every second of the reference is processed again for each line spoken.
@@ -162,7 +163,7 @@ export function NewVoiceScreen2() {
       app.setPage(null);
       app.setTab('voices');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }

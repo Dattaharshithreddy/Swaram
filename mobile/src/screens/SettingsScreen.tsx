@@ -3,6 +3,7 @@ import { ScrollView, View } from 'react-native';
 import { api, type ModelStatus, REQUIRED_MODELS, type ServerConfig } from '../api';
 import { Body, Button, Card, Field, Label, Notice, Title } from '../components/ui';
 import { space } from '../theme';
+import { friendlyError } from '../errors';
 
 export function SettingsScreen({
   config,
@@ -38,7 +39,7 @@ export function SettingsScreen({
         text: `Connected. ${health.gpu_available ? `GPU: ${health.gpu_type ?? 'yes'}` : 'No GPU detected: generation will be very slow.'}`,
       });
     } catch (e) {
-      setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+      setMessage({ kind: 'error', text: friendlyError(e) });
     } finally {
       setBusy(false);
     }
@@ -50,7 +51,7 @@ export function SettingsScreen({
       setMessage({ kind: 'ok', text: 'Download started on the server. Check back in a few minutes.' });
       setModels(await api.modelStatus(config));
     } catch (e) {
-      setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+      setMessage({ kind: 'error', text: friendlyError(e) });
     }
   }
 

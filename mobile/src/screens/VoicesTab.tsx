@@ -12,6 +12,7 @@ import { exportVoice, importVoice, keyOf, type VoiceRef } from '../edge/voices';
 import { languageByCode } from '../languages';
 import { useApp } from '../state';
 import { font, space, useTheme } from '../theme';
+import { friendlyError } from '../errors';
 
 const AVATAR = [
   { bg: '#2B1A2E', fg: '#F0A6D8' },
@@ -48,7 +49,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
       await startTraining(v.voice, c);
       app.refreshTrainings();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }
@@ -132,7 +133,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
               const uri = await exportVoice(v);
               await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: `Share ${v.voice.name}` });
             } catch (e) {
-              setError(e instanceof Error ? e.message : String(e));
+              setError(friendlyError(e));
             }
           }}
         />
@@ -188,7 +189,7 @@ export function VoicesTab() {
       app.refreshVoices();
       Alert.alert('Voice added', `"${name}" is ready to use.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     }
   }
 

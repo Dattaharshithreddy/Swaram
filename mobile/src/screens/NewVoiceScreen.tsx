@@ -14,6 +14,7 @@ import { api, type ServerConfig } from '../api';
 import { Body, Button, Card, Chip, Field, Label, Notice, Title } from '../components/ui';
 import { canTranscribe, engineFor, LANGUAGES, type LanguageCode, languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
+import { friendlyError } from '../errors';
 
 /** IndicF5 clones best from 5-12 seconds; longer clips get cut and stop matching the transcript. */
 const MIN_SECONDS = 5;
@@ -97,7 +98,7 @@ export function NewVoiceScreen({
       setTranscript(res.text.trim());
       if (clipSeconds === null) setClipSeconds(res.duration);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(null);
     }
@@ -117,7 +118,7 @@ export function NewVoiceScreen({
       });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(null);
     }

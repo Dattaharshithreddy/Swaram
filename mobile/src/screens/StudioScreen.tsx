@@ -37,6 +37,7 @@ import { parseSrt } from '../edge/srt';
 import { displayName, findVoice, keyOf, matchSpeaker, type VoiceRef } from '../edge/voices';
 import { guidanceFor, QUALITY, SPEEDS, useApp } from '../state';
 import { font, radius, space, speakerColors, useTheme } from '../theme';
+import { friendlyError } from '../errors';
 
 const EXAMPLE = `Narrator (calm): అలా ఆ రోజు ఉదయం మొదలైంది.
 Amma (sad): నాన్నా, భోజనం చేశావా? రాత్రంతా ఎక్కడ ఉన్నావు?
@@ -109,7 +110,7 @@ export function StudioScreen() {
       setScript(await new File(res.assets[0].uri).text());
       if (!title) setTitle(res.assets[0].name.replace(/\.[^.]+$/, ''));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     }
   }
 
@@ -121,7 +122,7 @@ export function StudioScreen() {
       if (!parseSrt(text).length) throw new Error('No subtitles found in this file. Use a .srt file.');
       setSrt({ name: res.assets[0].name, text });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     }
   }
 
@@ -134,7 +135,7 @@ export function StudioScreen() {
       setSounds(listSounds());
       setSoundName('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     }
   }
 
@@ -158,7 +159,7 @@ export function StudioScreen() {
       setOpenJob(job.id);
       void app.startJob(job);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     }
   }
 
@@ -414,7 +415,7 @@ function Projects({ openJob, setOpenJob }: { openJob: string | null; setOpenJob:
         { text: 'Share', onPress: () => void Sharing.shareAsync(out.uri, { mimeType: 'video/mp4' }) },
       ]);
     } catch (e) {
-      Alert.alert('Could not make the video', e instanceof Error ? e.message : String(e));
+      Alert.alert('Could not make the video', friendlyError(e));
     } finally {
       setVideoBusy(null);
     }
@@ -519,7 +520,7 @@ function MusicPanel({ job, onChanged }: { job: ScriptJob; onChanged: () => void 
       await fn();
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }
@@ -589,7 +590,7 @@ function JobLines({ job }: { job: ScriptJob }) {
       const uri = await partWav(job, i);
       await player.toggle(uri);
     } catch (e) {
-      Alert.alert('Could not make the line again', e instanceof Error ? e.message : String(e));
+      Alert.alert('Could not make the line again', friendlyError(e));
     } finally {
       setBusy(null);
     }

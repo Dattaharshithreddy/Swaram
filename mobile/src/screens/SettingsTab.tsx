@@ -9,6 +9,7 @@ import type { Provider } from '../edge/engine';
 import { useServerConfig } from '../settings';
 import { QUALITY, useApp } from '../state';
 import { font, space, useTheme } from '../theme';
+import { friendlyError } from '../errors';
 
 function mask(s: string) {
   return s ? `••••${s.slice(-4)}` : 'not set';
@@ -60,7 +61,7 @@ export function SettingsTab() {
       await downloadModel((bytes, total, file) => setDownload({ bytes, total, file }), cancel.current);
       app.refreshModel();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e, 'download'));
     } finally {
       setDownload(null);
     }

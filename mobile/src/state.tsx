@@ -37,6 +37,7 @@ import { parseScript } from './edge/script';
 import { prepareText } from './edge/telugu';
 import { displayName, keyOf, listAllVoices, type VoiceRef } from './edge/voices';
 import { spokenText } from './translit';
+import { friendlyError } from './errors';
 
 export type Tab = 'home' | 'studio' | 'voices' | 'settings';
 export type Page = { name: 'newVoice' } | { name: 'server' } | { name: 'emotion'; voiceId: string } | null;
@@ -277,7 +278,7 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
           setRecent(listRecent());
         }
       } catch (e) {
-        setJobError(`${e instanceof Error ? e.message : String(e)} Finished parts are saved: tap Resume to continue.`);
+        setJobError(`${friendlyError(e)} Finished parts are saved: tap Resume to continue.`);
       } finally {
         runningRef.current = null;
         setRunning(null);

@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 import { Alert } from 'react-native';
 import { SwaramEdge } from '../modules/swaram-edge';
 import { getPrefs } from './edge/prefs';
+import { friendlyError } from './errors';
 
 function safeName(label: string) {
   return label.replace(/[^A-Za-z0-9ఀ-౿]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'swaram';
@@ -27,7 +28,7 @@ export async function downloadAudio(uri: string, label = 'swaram'): Promise<void
     const where = await SwaramEdge.saveToDownloads(f.uri, `${safeName(label)}-${stamp}.${f.ext}`, f.mime);
     Alert.alert('Saved', `Saved to ${where}. Open it from the Files app.`);
   } catch (e) {
-    Alert.alert('Could not save', e instanceof Error ? e.message : String(e));
+    Alert.alert('Could not save', friendlyError(e));
   }
 }
 
@@ -36,7 +37,7 @@ export async function shareAudio(uri: string): Promise<void> {
     const f = await inFormat(uri);
     await Sharing.shareAsync(f.uri, { mimeType: f.mime, dialogTitle: 'Share audio' });
   } catch (e) {
-    Alert.alert('Could not share', e instanceof Error ? e.message : String(e));
+    Alert.alert('Could not share', friendlyError(e));
   }
 }
 
@@ -46,6 +47,6 @@ export async function downloadSubtitles(srtUri: string, label = 'swaram'): Promi
     const where = await SwaramEdge.saveToDownloads(srtUri, `${safeName(label)}.srt`, 'application/x-subrip');
     Alert.alert('Subtitles saved', `Saved to ${where}.`);
   } catch (e) {
-    Alert.alert('Could not save', e instanceof Error ? e.message : String(e));
+    Alert.alert('Could not save', friendlyError(e));
   }
 }

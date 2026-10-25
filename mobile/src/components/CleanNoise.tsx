@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { readFloats, writeFloats } from '../edge/engine';
 import { Button, Notice } from './ui';
+import { friendlyError } from '../errors';
 
 /** "Clean up noise" for a recording (fans, traffic, hiss), with undo. */
 export function CleanNoise({ clip, onClip }: { clip: Float32Array | null; onClip: (c: Float32Array) => void }) {
@@ -37,7 +38,7 @@ export function CleanNoise({ clip, onClip }: { clip: Float32Array | null; onClip
       setCleaned(true);
       onClip(next);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }

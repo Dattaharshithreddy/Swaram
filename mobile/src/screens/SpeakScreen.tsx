@@ -9,6 +9,7 @@ import { radius, space, useTheme } from '../theme';
 import { ReadAs } from '../components/ReadAs';
 import { downloadAudio } from '../download';
 import { spokenText } from '../translit';
+import { friendlyError } from '../errors';
 
 interface Take {
   uri: string;
@@ -71,7 +72,7 @@ export function SpeakScreen({
       setTakes((prev) => [take, ...prev].slice(0, 20));
       play(file.uri);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }
@@ -82,7 +83,7 @@ export function SpeakScreen({
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { dialogTitle: 'Share audio' });
       else setError('Sharing is not available on this device.');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyError(e));
     }
   }
 
