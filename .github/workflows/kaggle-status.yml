@@ -1,0 +1,23 @@
+name: Kaggle status
+
+# Read-only: lists the account's Swaram notebooks (trainings, renders) and their state.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          node --experimental-strip-types scripts/kaggle-status.ts 2>&1 | grep -v -i warning | tee out.txt
+          echo "::notice title=Kaggle status::$(sed 's/%/%25/g' out.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"
