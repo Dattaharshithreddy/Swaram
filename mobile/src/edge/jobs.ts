@@ -134,6 +134,10 @@ export function srtFile(job: ScriptJob): File {
   return new File(jobDir(job.id), 'swaram-script.srt');
 }
 
+export function saveJob(job: ScriptJob) {
+  save(job);
+}
+
 function save(job: ScriptJob) {
   new File(jobDir(job.id), 'job.json').writeSync(JSON.stringify(job));
 }

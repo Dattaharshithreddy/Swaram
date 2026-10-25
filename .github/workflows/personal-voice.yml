@@ -12,6 +12,8 @@ on:
     branches: [main]
     paths:
       - "personal-voice/**"
+      - "cloud/**"
+      - "edge/**"
       - ".github/workflows/personal-voice.yml"
 
 permissions:
@@ -84,6 +86,24 @@ jobs:
           done
           python dataset.py $WORK/data | tee $WORK/dataset.txt
           echo "::notice title=Training data::$(cat $WORK/dataset.txt | tr '\n' ' ') emotions.json=$(cat $WORK/data/emotions.json) used=$(cat $WORK/data/emotions_used.json 2>/dev/null) wavs=$(ls $WORK/data/wav | tr '\n' ' ')"
+      - name: Cloud render (studio quality script lines, CPU, few steps)
+        working-directory: cloud
+        run: |
+          python make_notebook.py && git diff --exit-code swaram_render.ipynb
+          mkdir -p $WORK/render
+          cp ../IndicF5/prompts/PAN_F_HAPPY_00001.wav $WORK/render/v.wav
+          python - <<'PY'
+          import json, os
+          w = os.environ["WORK"] + "/render"
+          json.dump({"steps": 4, "cfg": 2.0,
+                     "voices": {"f5:a": {"wav": "v.wav", "text": "ਭਹੰਪੀ ਵਿੱਚ ਸਮਾਰਕਾਂ ਦੇ ਭਵਨ ਨਿਰਮਾਣ ਕਲਾ ਦੇ ਵੇਰਵੇ ਗੁੰਝਲਦਾਰ ਅਤੇ ਹੈਰਾਨ ਕਰਨ ਵਾਲੇ ਹਨ, ਜੋ ਮੈਨੂੰ ਖੁਸ਼ ਕਰਦੇ  ਹਨ।"}},
+                     "parts": [{"i": 0, "voice": "f5:a", "text": "నమస్కారం, ఇది ఒక పరీక్ష."},
+                               {"i": 3, "voice": "f5:a", "text": "స్పేస్ లో శాటిలైట్స్ తిరుగుతాయి.", "speed": 1.1}]},
+                    open(w + "/job.json", "w"), ensure_ascii=False)
+          PY
+          python render.py --job $WORK/render/job.json --out $WORK/render/out
+          ls -l $WORK/render/out/parts
+          test -s $WORK/render/out/parts/part-00000.wav && test -s $WORK/render/out/parts/part-00003.wav
       - name: Fine-tune Piper's Telugu voice for a few steps
         working-directory: personal-voice
         run: |

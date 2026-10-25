@@ -50,7 +50,7 @@ export async function pushNotebook(
   auth: KaggleAuth,
   slug: string,
   notebook: { cells: { cell_type: string; source: string | string[] }[] },
-  opts: { gpu: boolean; internet: boolean; timeoutSeconds?: number },
+  opts: { gpu: boolean; internet: boolean; timeoutSeconds?: number; kernelSources?: string[] },
 ): Promise<PushResult> {
   const nb = JSON.parse(JSON.stringify(notebook));
   for (const cell of nb.cells) {
@@ -68,6 +68,8 @@ export async function pushNotebook(
     enableInternet: opts.internet,
     ...(opts.gpu ? { machineShape: 'NvidiaTeslaT4' } : {}),
     ...(opts.timeoutSeconds ? { sessionTimeoutSeconds: opts.timeoutSeconds } : {}),
+    // Other notebooks' output (a voice trained on the big model) mounted under /kaggle/input.
+    ...(opts.kernelSources?.length ? { kernelDataSources: opts.kernelSources.map((s) => `${auth.username.trim()}/${s}`) } : {}),
   });
   if (res.error) throw new Error(`Kaggle refused the notebook: ${res.error}`);
   return res;

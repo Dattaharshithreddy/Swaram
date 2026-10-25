@@ -1,7 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { usePlayer } from '../components/player';
@@ -39,6 +39,7 @@ import { studioInstalled } from '../edge/store';
 import { effectiveSteps, guidanceFor, QUALITY, SPEEDS, useApp } from '../state';
 import { font, radius, space, speakerColors, useTheme } from '../theme';
 import { friendlyError } from '../errors';
+import { cloudParts } from '../edge/kaggleRender';
 
 const EXAMPLE = `Narrator (calm): అలా ఆ రోజు ఉదయం మొదలైంది.
 Amma (sad): నాన్నా, భోజనం చేశావా? రాత్రంతా ఎక్కడ ఉన్నావు?
@@ -83,6 +84,79 @@ async function doneSoFarWav(job: ScriptJob): Promise<{ uri: string; lines: numbe
     else return null;
   }
   return { uri: f.uri, lines };
+}
+
+/** Studio-quality render on Kaggle for a project: start it, show its progress. */
+function CloudRender({ job, disabled }: { job: ScriptJob; disabled: boolean }) {
+  const t = useTheme();
+  const app = useApp();
+  const [busy, setBusy] = useState(false);
+  const r = app.renders.find((x) => x.jobId === job.id && x.state !== 'done');
+  if (!cloudParts(job).length) return null;
+
+  async function start() {
+    const c = app.creds;
+    if (!c?.username || !c.token || !c.hfToken) {
+      Alert.alert('Add your Kaggle keys first', 'Studio renders use your free Kaggle account. Add your Kaggle username, API token and Hugging Face token in Settings.', [
+        { text: 'Later' },
+        { text: 'Open Settings', onPress: () => app.setTab('settings') },
+      ]);
+      return;
+    }
+    setBusy(true);
+    try {
+      await app.startRender(job);
+    } catch (e) {
+      Alert.alert('Could not start the render', friendlyError(e, 'kaggle'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (r?.state === 'running') {
+    return (
+      <View style={{ gap: 6 }}>
+        <Notice text={`${r.detail ?? 'Rendering on Kaggle…'} The lines drop into this project by themselves; keep the app open now and then so it can check.`} />
+        <View style={{ flexDirection: 'row', gap: space.lg }}>
+          <Text style={{ color: t.accent, fontFamily: font.bold, fontSize: 13 }} onPress={() => void app.checkTrainings()}>
+            {app.checkingTrainings ? 'Checking…' : 'Check now'}
+          </Text>
+          {r.url && (
+            <Text style={{ color: t.soft, fontFamily: font.bold, fontSize: 13 }} onPress={() => void Linking.openURL(r.url as string)}>
+              Open on Kaggle
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 6 }}>
+      {r?.state === 'failed' && (
+        <>
+          <Notice text={r.detail ?? 'The studio render failed.'} kind="error" />
+          <Text style={{ color: t.soft, fontFamily: font.bold, fontSize: 13 }} onPress={() => app.dismissRender(r)}>
+            Dismiss
+          </Text>
+        </>
+      )}
+      <Button
+        title="Studio render on Kaggle (best quality)"
+        icon="cloud"
+        kind="gold"
+        small
+        busy={busy}
+        disabled={disabled || app.running !== null}
+        onPress={() =>
+          Alert.alert(
+            'Studio render',
+            'Makes every big-model line again with the full model at maximum quality on your free Kaggle GPU. Usually 10-20 minutes and needs internet. The project updates by itself when it is done.',
+            [{ text: 'Cancel', style: 'cancel' }, { text: 'Start', onPress: () => void start() }],
+          )
+        }
+      />
+    </View>
+  );
 }
 
 export function StudioScreen() {
@@ -536,6 +610,7 @@ function Projects({ openJob, setOpenJob }: { openJob: string | null; setOpenJob:
                 />
               )}
             </View>
+            <CloudRender job={job} disabled={isRunning} />
             {musicFor === job.id && finished && <MusicPanel job={job} onChanged={app.refreshJobs} />}
             {openJob === job.id && <JobLines job={job} />}
           </View>

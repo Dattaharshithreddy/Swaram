@@ -21,7 +21,7 @@ import {
   runJob,
   type ScriptJob,
 } from './edge/jobs';
-import {
+import { trainedBigVoice,
   checkTraining,
   type Credentials,
   listTrainings,
@@ -31,6 +31,7 @@ import {
 import { FastVoice, type PersonalVoice } from './edge/personal';
 import { applyPronunciations, getPrefs, type Prefs, setPrefs } from './edge/prefs';
 import { addRecent, listRecent, type RecentItem } from './edge/recent';
+import { checkRender, forgetRender, listRenders, type Render, startRender as startRenderOnKaggle } from './edge/kaggleRender';
 import { loadEmotionData, loadVoiceData, modelDir, modelInstalled, refreshVoice, saveAudio, studioInstalled } from './edge/store';
 import { type Emotion, EMOTION_STYLE } from './edge/emotions';
 import { parseScript } from './edge/script';
@@ -101,6 +102,9 @@ interface AppState {
   refreshTrainings: () => void;
   checkTrainings: () => Promise<void>;
   checkingTrainings: boolean;
+  renders: Render[];
+  startRender: (job: ScriptJob) => Promise<void>;
+  dismissRender: (r: Render) => void;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -125,6 +129,7 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
   const [jobError, setJobError] = useState<string | null>(null);
   const [creds, setCredsState] = useState<Credentials | null>(null);
   const [trainings, setTrainings] = useState<Training[]>(() => listTrainings());
+  const [renders, setRenders] = useState<Render[]>(() => listRenders());
   const [checkingTrainings, setChecking] = useState(false);
 
   const engine = useRef<EdgeEngine | null>(null);
@@ -302,6 +307,9 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
     [makerFor],
   );
 
+  const startJobRef = useRef<((job: ScriptJob) => Promise<void>) | null>(null);
+  startJobRef.current = startJob;
+
   const stopJob = useCallback(() => {
     if (runningRef.current) {
       runningRef.current.stop = true;
@@ -318,6 +326,7 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
     if (!c.token) return;
     setChecking(true);
     let imported = false;
+    const rendered: ScriptJob[] = [];
     try {
       for (const tr of listTrainings().filter((x) => x.state === 'running')) {
         try {
@@ -327,16 +336,52 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
           // Shown on the next check; network may be down.
         }
       }
+      for (const r of listRenders().filter((x) => x.state === 'running')) {
+        try {
+          const job = listJobs().find((j) => j.id === r.jobId);
+          const next = await checkRender(r, c, job);
+          if (next.state === 'done' && job) rendered.push(job);
+        } catch {
+          // Tried again on the next check.
+        }
+      }
     } finally {
       setTrainings(listTrainings());
+      setRenders(listRenders());
       setChecking(false);
       if (imported) setVoices(listAllVoices());
+      if (rendered.length) setJobs(listJobs());
     }
+    // The studio lines are in: make any ⚡ fast lines and sound clips here, then join.
+    const job = rendered[0];
+    if (job && !runningRef.current) void startJobRef.current?.(listJobs().find((j) => j.id === job.id) ?? job);
   }, [creds]);
+
+  const startRender = useCallback(
+    async (job: ScriptJob) => {
+      const c = creds ?? (await loadCredentials());
+      await startRenderOnKaggle(job, c, trainedBigVoice);
+      setRenders(listRenders());
+    },
+    [creds],
+  );
+
+  const dismissRender = useCallback((r: Render) => {
+    forgetRender(r);
+    setRenders(listRenders());
+  }, []);
+
+  // While something runs on Kaggle, look every 2 minutes (only while the app is open).
+  useEffect(() => {
+    const busy = trainings.some((t) => t.state === 'running') || renders.some((r) => r.state === 'running');
+    if (!busy || !creds?.token) return;
+    const timer = setInterval(() => void checkTrainings(), 120_000);
+    return () => clearInterval(timer);
+  }, [trainings, renders, creds?.token, checkTrainings]);
 
   // Check running trainings once keys are known (app open).
   useEffect(() => {
-    if (creds?.token && listTrainings().some((t) => t.state === 'running')) void checkTrainings();
+    if (creds?.token && (listTrainings().some((t) => t.state === 'running') || listRenders().some((r) => r.state === 'running'))) void checkTrainings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creds?.token]);
 
@@ -368,12 +413,15 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
       jobError,
       creds,
       setCreds: setCredsState,
+      renders,
+      startRender,
+      dismissRender,
       trainings,
       refreshTrainings,
       checkTrainings,
       checkingTrainings,
     }),
-    [tab, page, installed, refreshModel, voices, refreshVoices, prefs, updatePrefs, engineLoading, getEngine, releaseEngine, makerFor, prepare, speakQuick, recent, refreshRecent, jobs, refreshJobs, running, startJob, stopJob, jobError, creds, trainings, refreshTrainings, checkTrainings, checkingTrainings],
+    [tab, page, installed, refreshModel, voices, refreshVoices, prefs, updatePrefs, engineLoading, getEngine, releaseEngine, makerFor, prepare, speakQuick, recent, refreshRecent, jobs, refreshJobs, running, startJob, stopJob, jobError, creds, trainings, refreshTrainings, checkTrainings, checkingTrainings, renders, startRender, dismissRender],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

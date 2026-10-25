@@ -36,6 +36,17 @@ export interface Training {
   /** Expected total hours on Kaggle (older trainings: 4). */
   hours?: number;
   mode?: TrainingMode;
+  /** 'big': the big model trained on this voice (used when rendering on Kaggle); default: a ⚡ fast voice. */
+  kind?: 'fast' | 'big';
+  /** big: the trained weights' file name in that notebook's output. */
+  bigFile?: string;
+}
+
+/** A finished big-model training for this voice key ("f5:<id>"), for studio renders. */
+export function trainedBigVoice(voiceKey: string): { slug: string; file: string } | undefined {
+  const id = voiceKey.startsWith('f5:') ? voiceKey.slice(3) : '';
+  const t = listTrainings().find((x) => x.kind === 'big' && x.state === 'done' && x.voiceId === id && x.bigFile);
+  return t ? { slug: t.slug, file: t.bigFile as string } : undefined;
 }
 
 export function expectedHours(t: Training): number {
