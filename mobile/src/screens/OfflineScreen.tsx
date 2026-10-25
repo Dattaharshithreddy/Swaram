@@ -5,6 +5,7 @@ import {
   useAudioPlayerStatus,
   useAudioStream,
 } from 'expo-audio';
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -18,6 +19,7 @@ import {
   deleteVoice,
   exportForTraining,
   hasRecording,
+  recordingFile,
   downloadModel,
   installedBytes,
   listVoices,
@@ -87,6 +89,7 @@ export function OfflineScreen() {
   const [fastId, setFastId] = useState<string | null>(null);
   const fastEngine = useRef<FastVoice | null>(null);
   const [fastResult, setFastResult] = useState<{ uri: string; audio: number; wall: number } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [creating, setCreating] = useState(false);
 
   const [text, setText] = useState('');
@@ -334,21 +337,35 @@ export function OfflineScreen() {
                     onPress={() => {
                       setFastId(null);
                       setVoiceId(v.id);
+                      setConfirmDelete(false);
                     }}
                   />
                 ))}
                 {fastVoices.map((v) => (
-                  <Chip key={v.id} label={`⚡ ${v.name}`} selected={fastSelected?.id === v.id} onPress={() => setFastId(v.id)} />
+                  <Chip
+                    key={v.id}
+                    label={`⚡ ${v.name}`}
+                    selected={fastSelected?.id === v.id}
+                    onPress={() => {
+                      setFastId(v.id);
+                      setConfirmDelete(false);
+                    }}
+                  />
                 ))}
               </View>
             )}
             {fastSelected && <Notice text="⚡ Personal fast voice: a sentence takes about a second." kind="ok" />}
             <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
               {installed && <Button title="+ New offline voice" onPress={() => setCreating(true)} style={{ flex: 1 }} />}
-              {target && (
+              {target && !confirmDelete && <Button title="Delete" kind="secondary" onPress={() => setConfirmDelete(true)} />}
+            </View>
+            {target && confirmDelete && (
+              <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Text style={{ color: t.ink, flex: 1 }}>Delete "{target.voice.name}"? This can't be undone.</Text>
+                <Button title="Keep" kind="secondary" onPress={() => setConfirmDelete(false)} />
                 <Button
                   title="Delete"
-                  kind="secondary"
+                  kind="danger"
                   onPress={() => {
                     if (target.kind === 'fast') {
                       deletePersonal(target.voice);
@@ -359,10 +376,22 @@ export function OfflineScreen() {
                       setVoices(listVoices());
                       setVoiceId(null);
                     }
+                    setConfirmDelete(false);
                   }}
                 />
-              )}
-            </View>
+              </View>
+            )}
+            {voice && !fastSelected && hasRecording(voice) && (
+              <Button
+                title="▶ Play recording"
+                kind="secondary"
+                onPress={async () => {
+                  await setAudioModeAsync({ playsInSilentMode: true });
+                  player.replace({ uri: recordingFile(voice).uri });
+                  player.play();
+                }}
+              />
+            )}
             <Button title="Import personal voice (.zip)" kind="secondary" onPress={importFast} />
             {voice && !fastSelected && hasRecording(voice) && (
               <Text style={{ color: t.accent, fontWeight: '600' }} onPress={() => exportVoice(voice)}>
@@ -520,6 +549,21 @@ function NewOfflineVoice({
   const [seconds, setSeconds] = useState(0);
   const [clip, setClip] = useState<Float32Array | null>(null);
   const [source, setSource] = useState<'mic' | 'file'>('mic');
+  const preview = useAudioPlayer(null);
+  const previewStatus = useAudioPlayerStatus(preview);
+
+  async function playClip() {
+    if (!clip) return;
+    if (previewStatus.playing) {
+      preview.pause();
+      return;
+    }
+    const f = new File(Paths.cache, `swaram-recording-${Date.now()}.wav`);
+    f.writeSync(encodeWav(clip));
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    preview.replace({ uri: f.uri });
+    preview.play();
+  }
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -658,6 +702,21 @@ function NewOfflineVoice({
                 text={`${clipSeconds.toFixed(1)} s recorded${lengthOk ? ': good length.' : ': aim for 4-8 seconds.'}`}
                 kind={lengthOk ? 'ok' : 'error'}
               />
+            )}
+            {clip && !isStreaming && (
+              <View style={{ flexDirection: 'row', gap: space.sm }}>
+                <Button title={previewStatus.playing ? '⏸ Pause' : '▶ Play recording'} kind="secondary" style={{ flex: 1 }} onPress={playClip} />
+                <Button
+                  title="🗑 Discard"
+                  kind="secondary"
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    preview.pause();
+                    setClip(null);
+                    setSeconds(0);
+                  }}
+                />
+              </View>
             )}
           </>
         ) : (
