@@ -157,37 +157,90 @@ export function deleteStudio(): void {
   for (const f of [studioFile(), new File(modelDir(), 'studio.json')]) if (f.exists) f.delete();
 }
 
-/** Downloads the Studio quality model (retrying dropped connections like the main model). */
-export async function downloadStudio(onProgress: (bytes: number, total: number) => void, signal?: { cancelled: boolean }) {
+export interface StudioDownload {
+  cancelled: boolean;
+  /** Stops the transfer right away (set by downloadStudio). */
+  cancel?: () => void;
+}
+
+async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, { signal: ctl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Downloads the Studio quality model. Reports what it's doing (onStatus), stops at once on
+ * cancel, and restarts the file if no data arrives for 45 s or the connection drops (4 tries).
+ */
+export async function downloadStudio(
+  onProgress: (bytes: number, total: number) => void,
+  control: StudioDownload = { cancelled: false },
+  onStatus: (text: string) => void = () => {},
+) {
   const dir = modelDir();
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+  onStatus('Connecting…');
   let res: Response;
   try {
-    res = await fetch(STUDIO_BASE_URL + 'studio.json');
+    res = await fetchWithTimeout(STUDIO_BASE_URL + 'studio.json', 20000);
   } catch (e) {
+    if (control.cancelled) throw new Error('Download cancelled');
     throw new Error(friendlyError(e, 'download'));
   }
   if (!res.ok) throw new Error(res.status === 404 ? 'Studio quality isn’t published yet. Try again later.' : `Could not get Studio quality (HTTP ${res.status}).`);
   const infoText = await res.text();
   const info = JSON.parse(infoText) as { bytes: number };
+  onProgress(0, info.bytes);
   const target = studioFile();
   for (let attempt = 1; ; attempt++) {
-    if (signal?.cancelled) throw new Error('Download cancelled');
+    if (control.cancelled) throw new Error('Download cancelled');
     if (target.exists) target.delete();
+    onStatus(attempt === 1 ? 'Starting the download…' : `Connection dropped, trying again (${attempt} of 4)…`);
     const task = new DownloadTask(STUDIO_BASE_URL + 'flow.onnx', target);
-    const sub = task.addListener('progress', (p) => onProgress(p.bytesWritten, info.bytes));
+    let last = Date.now();
+    let stalled = false;
+    const sub = task.addListener('progress', (p) => {
+      last = Date.now();
+      onStatus('Downloading…');
+      onProgress(p.bytesWritten, info.bytes);
+    });
+    const watchdog = setInterval(() => {
+      if (Date.now() - last > 45000) {
+        stalled = true;
+        task.cancel();
+      }
+    }, 5000);
+    control.cancel = () => {
+      control.cancelled = true;
+      task.cancel();
+    };
     try {
       const file = await task.downloadAsync();
+      if (control.cancelled) throw new Error('Download cancelled');
       if (!file) throw new Error('Download cancelled');
       break;
     } catch (e) {
-      if (signal?.cancelled || attempt >= 4 || !isNetworkError(e)) throw e;
+      if (control.cancelled) {
+        if (target.exists) target.delete();
+        throw new Error('Download cancelled');
+      }
+      if (attempt >= 4 || (!stalled && !isNetworkError(e))) throw e;
       await new Promise((r) => setTimeout(r, 3000 * attempt));
     } finally {
+      clearInterval(watchdog);
       sub.remove();
+      control.cancel = undefined;
     }
   }
-  if (target.size !== info.bytes) throw new Error('Studio quality did not download completely. Try again on Wi-Fi.');
+  if (target.size !== info.bytes) {
+    if (target.exists) target.delete();
+    throw new Error('Studio quality did not download completely. Try again on Wi-Fi.');
+  }
   const infoFile = new File(dir, 'studio.json');
   if (infoFile.exists) infoFile.delete();
   infoFile.writeSync(infoText);

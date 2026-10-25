@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Alert, Text, View } from 'react-native';
-import { deleteStudio, downloadStudio, studioInstalled } from '../edge/store';
+import { deleteStudio, downloadStudio, type StudioDownload, studioInstalled } from '../edge/store';
 import { friendlyError } from '../errors';
 import { useApp } from '../state';
 import { font, space, useTheme } from '../theme';
@@ -13,14 +13,16 @@ export function StudioQuality() {
   const [installed, setInstalled] = useState(studioInstalled);
   const [progress, setProgress] = useState<{ bytes: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const signal = useRef({ cancelled: false });
+  const [status, setStatus] = useState('');
+  const signal = useRef<StudioDownload>({ cancelled: false });
 
   async function download() {
     setError(null);
     signal.current = { cancelled: false };
-    setProgress({ bytes: 0, total: 1 });
+    setProgress({ bytes: 0, total: 0 });
+    setStatus('Connecting…');
     try {
-      await downloadStudio((bytes, total) => setProgress({ bytes, total }), signal.current);
+      await downloadStudio((bytes, total) => setProgress({ bytes, total }), signal.current, setStatus);
       setInstalled(true);
       app.updatePrefs({ studio: true });
       await app.releaseEngine();
@@ -70,10 +72,19 @@ export function StudioQuality() {
         <>
           <ProgressBar value={progress.bytes / Math.max(1, progress.total)} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: t.soft, fontFamily: font.medium, fontSize: 12 }}>
-              {(progress.bytes / 1e6).toFixed(0)} of {(progress.total / 1e6).toFixed(0)} MB
+            <Text style={{ color: t.soft, fontFamily: font.medium, fontSize: 12, flex: 1 }}>
+              {progress.total ? `${status} ${(progress.bytes / 1e6).toFixed(0)} of ${(progress.total / 1e6).toFixed(0)} MB` : status}
             </Text>
-            <Button title="Cancel" kind="ghost" small onPress={() => (signal.current.cancelled = true)} />
+            <Button
+              title="Cancel"
+              kind="ghost"
+              small
+              onPress={() => {
+                signal.current.cancelled = true;
+                signal.current.cancel?.();
+                setProgress(null);
+              }}
+            />
           </View>
         </>
       ) : (
