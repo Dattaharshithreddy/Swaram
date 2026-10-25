@@ -14,6 +14,10 @@ export function modelDir(): Directory {
   return new Directory(Paths.document, 'edge-model');
 }
 
+export function voicesDirectory(): Directory {
+  return voicesDir();
+}
+
 function voicesDir(): Directory {
   const d = new Directory(Paths.document, 'edge-voices');
   if (!d.exists) d.create({ intermediates: true, idempotent: true });

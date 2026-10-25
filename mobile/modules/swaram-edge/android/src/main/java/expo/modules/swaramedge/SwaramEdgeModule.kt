@@ -349,6 +349,31 @@ class SwaramEdgeModule : Module() {
       }
     }
 
+    /** Music (any audio file, looped) under a voice WAV, with ducking and fades. Returns samples. */
+    AsyncFunction("mixMusic") { voiceWav: String, music: String, outWav: String, gain: Double, duck: Boolean, fadeSec: Double ->
+      try {
+        AudioFx.mixMusic(File(pathOf(voiceWav)), pathOf(music), File(pathOf(outWav)), gain.toFloat(), duck, fadeSec.toFloat(), appCtx.cacheDir).toDouble()
+      } catch (t: Throwable) {
+        trail("music failed: $t")
+        throw EdgeException("Could not add the music: ${t.message}", t)
+      }
+    }
+
+    /** Reduces steady background noise in a float32 file. Returns samples. */
+    AsyncFunction("denoise") { inPath: String, outPath: String, strength: Double ->
+      AudioFx.denoise(File(pathOf(inPath)), File(pathOf(outPath)), strength.toFloat()).toDouble()
+    }
+
+    /** A video with its sound replaced by the given .m4a. Returns the video length in microseconds. */
+    AsyncFunction("muxVideo") { video: String, audioM4a: String, outMp4: String ->
+      try {
+        AudioFx.muxVideo(pathOf(video), pathOf(audioM4a), File(pathOf(outMp4))).toDouble()
+      } catch (t: Throwable) {
+        trail("mux failed: $t")
+        throw EdgeException("Could not make the video: ${t.message}", t)
+      }
+    }
+
     /** 16-bit WAV -> AAC .m4a (much smaller). Returns samples. */
     AsyncFunction("encodeM4a") { wavPath: String, outPath: String, bitrate: Int ->
       try {

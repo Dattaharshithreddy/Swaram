@@ -14,12 +14,18 @@ import { chunkText, chunksFor, type EdgeEngine, type EdgeVoiceData, writeFloats 
 import type { FastVoice } from './personal';
 import { type Emotion, EMOTION_STYLE } from './emotions';
 import { parseScript } from './script';
+import { soundFile, soundSlug } from './sounds';
+import { parseSrt } from './srt';
 import { displayName, findVoice, keyOf, listAllVoices, type VoiceRef } from './voices';
 
 /** Makes one part's audio (24 kHz); progress.done/total count steps for the bar. */
 export type PartMaker = (text: string, progress: { done: number; total: number }) => Promise<Float32Array>;
-/** Gives the maker for a voice key and emotion (loads the model, voice or emotion recording as needed). */
-export type MakerFor = (voiceKey: string, emotion?: Emotion | null) => Promise<PartMaker>;
+/**
+ * Gives the maker for a voice key and emotion (loads the model, voice or
+ * emotion recording as needed). speedMul > 1 speaks faster (dubbing uses it
+ * to fit a line into its subtitle's time).
+ */
+export type MakerFor = (voiceKey: string, emotion?: Emotion | null, speedMul?: number) => Promise<PartMaker>;
 
 export interface MakeOptions {
   steps: number;
@@ -57,6 +63,11 @@ export interface JobPart {
   voice: string;
   speaker: string | null;
   emotion?: Emotion | null;
+  /** A sound clip (Studio > Sounds) instead of speech. */
+  sound?: string;
+  /** Dubbing: when this line starts (s) and how long it may take. */
+  startAt?: number;
+  slot?: number;
   /** Silence after this part, seconds. */
   pauseAfter: number;
 }
@@ -64,7 +75,11 @@ export interface JobPart {
 export interface ScriptJob {
   id: string;
   version: 2;
+  /** 'dub': lines timed to subtitles. */
+  kind?: 'script' | 'dub';
   title: string;
+  /** Background music mixed under the finished audio. */
+  music?: { name: string; gain: number; duck: boolean; uri?: string };
   parts: JobPart[];
   /** voice key -> display name, as it was when the job was made. */
   voiceNames: Record<string, string>;
@@ -102,6 +117,16 @@ export function partFile(job: ScriptJob, i: number): File {
 
 export function outputFile(job: ScriptJob): File {
   return new File(jobDir(job.id), 'swaram-script.wav');
+}
+
+export function musicFile(job: ScriptJob): File {
+  return new File(jobDir(job.id), 'swaram-script-music.wav');
+}
+
+/** The finished audio to play and share: with music when it has some. */
+export function finalAudio(job: ScriptJob): File {
+  const m = musicFile(job);
+  return job.music && m.exists ? m : outputFile(job);
 }
 
 export function srtFile(job: ScriptJob): File {
@@ -165,7 +190,7 @@ export function deleteJob(job: ScriptJob) {
 
 /** Voices this job uses, by key (for the "N voices" label). */
 export function jobVoiceKeys(job: ScriptJob): string[] {
-  return [...new Set(job.parts.map((p) => p.voice))];
+  return [...new Set(job.parts.filter((p) => !p.sound).map((p) => p.voice))];
 }
 
 function splitForVoice(ref: VoiceRef, text: string): string[] {
@@ -189,6 +214,12 @@ export function createScriptJob(
   const parts: JobPart[] = [];
   const voiceNames: Record<string, string> = {};
   for (const seg of parseScript(script)) {
+    if (seg.sound) {
+      const f = soundFile(seg.sound);
+      if (!f.exists) throw new Error(`Add the sound "${seg.sound}" first (Studio > Sound clips).`);
+      parts.push({ text: '', voice: '', speaker: seg.speaker, sound: soundSlug(seg.sound), pauseAfter: seg.pauseAfter });
+      continue;
+    }
     const key = opts.voiceFor(seg.speaker);
     const ref = findVoice(key, all);
     if (!ref) throw new Error(seg.speaker ? `Choose a voice for "${seg.speaker}".` : 'Choose a voice.');
@@ -205,7 +236,7 @@ export function createScriptJob(
       }),
     );
   }
-  if (!parts.length) throw new Error('The script is empty.');
+  if (!parts.some((p) => !p.sound)) throw new Error('The script is empty.');
   const firstWords = script.replace(/^[^:\n]{1,24}:\s*/, '').trim().split(/\s+/).slice(0, 7).join(' ');
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const job: ScriptJob = {
@@ -226,20 +257,91 @@ export function createScriptJob(
   return job;
 }
 
+/**
+ * A dub from subtitles: each cue is spoken in its voice (cues may start with
+ * "Name:" and carry emotion tags), starting at the cue's time; a line that
+ * comes out too long is made again a little faster to fit.
+ */
+export function createDubJob(
+  srt: string,
+  opts: MakeOptions & {
+    title?: string;
+    voiceFor: (speaker: string | null) => string | undefined;
+    prepare: (text: string, language: string) => string;
+  },
+): ScriptJob {
+  const all = listAllVoices();
+  const cues = parseSrt(srt);
+  if (!cues.length) throw new Error('No subtitles found in this file. Use a .srt file.');
+  const parts: JobPart[] = [];
+  const voiceNames: Record<string, string> = {};
+  cues.forEach((cue, i) => {
+    const segs = parseScript(cue.text).filter((g) => !g.sound);
+    if (!segs.length) return;
+    const speaker = segs[0].speaker;
+    const key = opts.voiceFor(speaker);
+    const ref = findVoice(key, all);
+    if (!ref) throw new Error(speaker ? `Choose a voice for "${speaker}".` : 'Choose a voice.');
+    voiceNames[keyOf(ref)] = displayName(ref);
+    const nextStart = cues[i + 1]?.start ?? cue.end + 2;
+    parts.push({
+      text: opts.prepare(segs.map((g) => g.text).join(' '), ref.voice.language),
+      voice: keyOf(ref),
+      speaker,
+      emotion: segs[0].emotion,
+      startAt: cue.start,
+      slot: Math.max(0.5, nextStart - cue.start - 0.05),
+      pauseAfter: 0,
+    });
+  });
+  const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const job: ScriptJob = {
+    id,
+    version: 2,
+    kind: 'dub',
+    title: opts.title?.trim() || `Dub · ${cues.length} lines`,
+    parts,
+    voiceNames,
+    steps: opts.steps,
+    guidance: opts.guidance,
+    speed: opts.speed,
+    createdAt: Date.now(),
+    computeSeconds: 0,
+    audioSeconds: 0,
+  };
+  jobDir(id).create({ intermediates: true, idempotent: true });
+  save(job);
+  return job;
+}
+
 function stepsFor(job: ScriptJob, part: JobPart): number {
+  if (part.sound) return 1;
   return part.voice.startsWith('fast:') ? 1 : job.steps;
 }
 
 async function makePart(job: ScriptJob, i: number, makerFor: MakerFor, progress: { done: number; total: number }) {
   const part = job.parts[i];
+  const dest = partFile(job, i);
+  if (part.sound) {
+    const src = soundFile(part.sound);
+    if (!src.exists) throw new Error(`The sound "${part.sound}" was deleted. Add it again in Studio > Sound clips.`);
+    if (dest.exists) dest.delete();
+    src.copy(dest);
+    return 0;
+  }
   const maker = await makerFor(part.voice, part.emotion ?? null);
   const t0 = Date.now();
-  const wav = await maker(part.text, progress);
+  let wav = await maker(part.text, progress);
+  if (part.slot && wav.length > part.slot * SAMPLE_RATE * 1.05) {
+    // Dubbing: too long for its subtitle, so make it again a little faster.
+    const mul = Math.min(1.6, wav.length / (part.slot * SAMPLE_RATE));
+    const faster = await makerFor(part.voice, part.emotion ?? null, mul);
+    wav = await faster(part.text, progress);
+  }
   // Write under a temporary name first, so a crash never leaves a half part.
   const tmp = new File(jobDir(job.id), `part-${i}.tmp`);
   if (tmp.exists) tmp.delete();
   writeFloats(tmp, wav);
-  const dest = partFile(job, i);
   if (dest.exists) dest.delete();
   tmp.move(dest);
   job.computeSeconds += (Date.now() - t0) / 1000;
@@ -268,11 +370,20 @@ async function finish(job: ScriptJob) {
     return start;
   };
   job.parts.forEach((p, i) => {
+    if (p.startAt !== undefined) {
+      // Dubbing: wait until this line's subtitle time.
+      const gap = p.startAt - (first ? 0 : t - fade);
+      if (gap > 0.02) {
+        const s = silenceFile(job, Math.round(gap * 1000) / 1000);
+        files.push(s.uri);
+        place((s.size ?? 0) / 4 / SAMPLE_RATE);
+      }
+    }
     const f = partFile(job, i);
     files.push(f.uri);
     const seconds = (f.size ?? 0) / 4 / SAMPLE_RATE;
     const start = place(seconds);
-    cues.push({ start, end: start + seconds, text: p.text, speaker: p.speaker });
+    if (!p.sound) cues.push({ start, end: start + seconds, text: p.text, speaker: p.speaker });
     if (p.pauseAfter > 0) {
       const s = silenceFile(job, p.pauseAfter);
       files.push(s.uri);
@@ -287,6 +398,40 @@ async function finish(job: ScriptJob) {
   if (srt.exists) srt.delete();
   srt.writeSync(toSrt(cues));
   job.finishedAt = Date.now();
+  save(job);
+  if (job.music?.uri) await mix(job);
+}
+
+async function mix(job: ScriptJob) {
+  const edge = SwaramEdge;
+  if (!edge || !job.music) return;
+  const out = musicFile(job);
+  if (out.exists) out.delete();
+  const music = new File(jobDir(job.id), 'music-source');
+  await edge.mixMusic(outputFile(job).uri, music.uri, out.uri, job.music.gain, job.music.duck, 2);
+}
+
+/** Puts background music (any audio file) under a finished project. */
+export async function addMusic(job: ScriptJob, uri: string, name: string, gain: number, duck = true) {
+  const src = new File(jobDir(job.id), 'music-source');
+  if (src.exists) src.delete();
+  new File(uri).copy(src);
+  job.music = { name, gain, duck, uri: src.uri };
+  save(job);
+  if (isFinished(job)) await mix(job);
+}
+
+export async function setMusicVolume(job: ScriptJob, gain: number) {
+  if (!job.music) return;
+  job.music = { ...job.music, gain };
+  save(job);
+  if (isFinished(job)) await mix(job);
+}
+
+export function removeMusic(job: ScriptJob) {
+  job.music = undefined;
+  const m = musicFile(job);
+  if (m.exists) m.delete();
   save(job);
 }
 

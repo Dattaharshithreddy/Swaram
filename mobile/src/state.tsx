@@ -14,7 +14,7 @@ import {
   withGain,
   listJobs,
   type MakeOptions,
-  outputFile,
+  finalAudio,
   srtFile,
   type MakerFor,
   type PartMaker,
@@ -164,8 +164,8 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
   const makerFor = useCallback(
     (opts: MakeOptions): MakerFor => {
       const cache = new Map<string, PartMaker>();
-      return async (key: string, emotion?: Emotion | null) => {
-        const cacheKey = `${key}|${emotion ?? ''}`;
+      return async (key: string, emotion?: Emotion | null, speedMul = 1) => {
+        const cacheKey = `${key}|${emotion ?? ''}|${speedMul.toFixed(2)}`;
         const hit = cache.get(cacheKey);
         if (hit) return hit;
         const ref = listAllVoices().find((r) => keyOf(r) === key);
@@ -173,20 +173,21 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
         // A line with an emotion uses the voice's recording in that tone; without one,
         // speed and loudness are adjusted instead (EMOTION_STYLE).
         const style = emotion ? EMOTION_STYLE[emotion] : null;
+        const base = { ...opts, speed: opts.speed * speedMul };
         let maker: PartMaker;
         if (ref.kind === 'fast') {
           const fv = await getFast(ref.voice);
           maker = fv.knows(emotion)
-            ? fastMaker(fv, opts.speed, emotion)
-            : withGain(fastMaker(fv, opts.speed * (style?.speed ?? 1)), style?.gain ?? 1);
+            ? fastMaker(fv, base.speed, emotion)
+            : withGain(fastMaker(fv, base.speed * (style?.speed ?? 1)), style?.gain ?? 1);
         } else {
           if (!modelInstalled()) throw new Error('Download the offline model in Settings to use big-model voices.');
           const eng = await getEngine();
           const take = emotion ? await loadEmotionData(ref.voice, emotion) : null;
           maker = take
-            ? f5Maker(eng, take, opts, `cond-${ref.voice.id}-${emotion}`)
+            ? f5Maker(eng, take, base, `cond-${ref.voice.id}-${emotion}`)
             : withGain(
-                f5Maker(eng, await loadVoiceData(ref.voice), { ...opts, speed: opts.speed * (style?.speed ?? 1) }, `cond-${ref.voice.id}`),
+                f5Maker(eng, await loadVoiceData(ref.voice), { ...base, speed: base.speed * (style?.speed ?? 1) }, `cond-${ref.voice.id}`),
                 style?.gain ?? 1,
               );
         }
@@ -267,7 +268,7 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
         );
         if (finished) {
           addRecent({
-            uri: outputFile(job).uri,
+            uri: finalAudio(job).uri,
             title: job.title,
             voiceName: Object.values(job.voiceNames).join(', '),
             seconds: job.audioSeconds,

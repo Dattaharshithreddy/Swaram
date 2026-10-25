@@ -9,10 +9,13 @@ import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav, SAMPLE_RATE } from './dsp';
 import { EdgeEngine, type Provider } from './engine';
 import { File, Paths } from 'expo-file-system';
-import { createScriptJob, f5Maker, fastMaker, withGain, jobVoiceKeys, type MakerFor, outputFile, type PartMaker, partsDone, redoPart, runJob, srtFile } from './jobs';
+import { addMusic, createDubJob, createScriptJob, f5Maker, fastMaker, finalAudio, musicFile, withGain, jobVoiceKeys, type MakerFor, outputFile, type PartMaker, partsDone, redoPart, runJob, srtFile } from './jobs';
 import { replaceWords } from './textrules';
 import { deletePersonal, FastVoice, importPersonal } from './personal';
 import { EMOTION_STYLE } from './emotions';
+import { writeFloats } from './engine';
+import { importSound } from './sounds';
+import { exportVoice, importVoice } from './voices';
 import { downloadModel, exportForTraining, loadEmotionData, loadVoiceData, saveEmotion, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
 import { prepareText } from './telugu';
 import { spokenText } from '../translit';
@@ -174,9 +177,51 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     await SwaramEdge.encodeM4a(out.uri, m4a.uri, 96000);
     log(`m4a ${m4a.size} bytes vs wav ${out.size}`);
     if (!m4a.exists || (m4a.size ?? 0) < 1000 || (m4a.size ?? 0) > (out.size ?? 0) / 2) throw new Error('m4a export');
+    // Sound clip in a script, dub from subtitles, background music, noise cleanup, voice sharing.
+    const beepFile = new File(Paths.cache, 'selftest-beep.wav');
+    beepFile.writeSync(encodeWav(Float32Array.from({ length: SAMPLE_RATE / 2 }, (_, i) => 0.3 * Math.sin((2 * Math.PI * 880 * i) / SAMPLE_RATE))));
+    await importSound(beepFile.uri, 'beep');
+    const fastOnly: MakerFor = async (_key, emotion, mul = 1) => fastMaker(fast, mul, emotion);
+    const sfxJob = createScriptJob('CI test: తలుపు తెరువు. [sound: beep] ఎవరు?', {
+      ...opts,
+      voiceFor: () => `fast:${pv.id}`,
+      prepare: (text, language) => prepareText(text, language),
+    });
+    await runJob(sfxJob, fastOnly, () => {}, () => false);
+    log(`sound clip job parts=${sfxJob.parts.length} sound=${sfxJob.parts.some((p) => p.sound === 'beep')} audio=${sfxJob.audioSeconds.toFixed(1)}s`);
+    if (!sfxJob.parts.some((p) => p.sound === 'beep') || !outputFile(sfxJob).exists) throw new Error('sound clip');
+
+    const dub = createDubJob(
+      '1\n00:00:01,000 --> 00:00:02,500\nCI test: నమస్కారం, ఎలా ఉన్నారు?\n\n2\n00:00:04,000 --> 00:00:05,000\nఈ రోజు వాతావరణం చాలా బాగుంది, మనం బయటికి వెళ్దాం.\n',
+      { ...opts, voiceFor: () => `fast:${pv.id}`, prepare: (text, language) => prepareText(text, language) },
+    );
+    await runJob(dub, fastOnly, () => {}, () => false);
+    const dubSrt = srtFile(dub).textSync();
+    log(`dub lines=${dub.parts.length} audio=${dub.audioSeconds.toFixed(1)}s srt=${dubSrt.split('\n')[1]} | ${dubSrt.split('\n')[5]}`);
+    if (dub.audioSeconds < 4 || !dubSrt.includes('00:00:01') || !dubSrt.includes('00:00:04')) throw new Error('dub timing');
+
+    const musicSrc = new File(Paths.cache, 'selftest-music.wav');
+    musicSrc.writeSync(encodeWav(Float32Array.from({ length: SAMPLE_RATE * 3 }, (_, i) => 0.2 * Math.sin((2 * Math.PI * 220 * i) / SAMPLE_RATE))));
+    await addMusic(dub, musicSrc.uri, 'test tone', 0.22);
+    log(`music mixed: ${musicFile(dub).exists} final=${finalAudio(dub).uri.endsWith('music.wav')}`);
+    if (!musicFile(dub).exists) throw new Error('music mix');
+
+    const noisy = new File(Paths.cache, 'selftest-noisy.f32');
+    writeFloats(noisy, testClip(4).map((v) => v + 0.05 * (Math.random() - 0.5)));
+    const cleanOut = new File(Paths.cache, 'selftest-clean.f32');
+    if (cleanOut.exists) cleanOut.delete();
+    const cleanedN = await SwaramEdge.denoise(noisy.uri, cleanOut.uri, 0.6);
+    log(`denoise samples=${cleanedN}`);
+    if (cleanedN < SAMPLE_RATE * 3) throw new Error('denoise');
+
+    const shared = await exportVoice({ kind: 'f5', voice: withSad });
+    const importedName = await importVoice(shared);
+    log(`voice shared and imported: ${importedName} (${new File(shared).size} bytes)`);
+    const sharedFast = await exportVoice({ kind: 'fast', voice: pv });
+    log(`fast voice shared: ${new File(sharedFast).size} bytes`);
     deletePersonal(pv);
 
-    log('OK all checks passed (speak, upload decode, export, fast voice, emotions, two-voice script with pause, stop/resume, subtitles, redo line, m4a)');
+    log('OK all checks passed (speak, upload decode, export, fast voice, emotions, two-voice script with pause, stop/resume, subtitles, redo line, m4a, sound clip, dub, music, denoise, voice sharing)');
     await engine.release();
   } catch (e) {
     log(`FAIL ${e instanceof Error ? `${e.message} ${e.stack ?? ''}` : String(e)}`.replace(/\n/g, ' | '));

@@ -2,6 +2,7 @@ import { requestRecordingPermissionsAsync, setAudioModeAsync, useAudioStream } f
 import { File, Paths } from 'expo-file-system';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { CleanNoise } from '../components/CleanNoise';
 import { usePlayer } from '../components/player';
 import { ReadAs } from '../components/ReadAs';
 import { Body, Button, Card, Chip, Field, Header, Icon, Label, Notice, Screen, Segmented } from '../components/ui';
@@ -232,12 +233,14 @@ export function NewVoiceScreen2() {
                 />
               </View>
             )}
+            {clip && !isStreaming && <CleanNoise clip={clip} onClip={setClip} />}
             <Field label="What you read (edit if you said something else)" value={transcript} onChangeText={setTranscript} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
           </>
         ) : (
           <>
             <UploadClip onClip={setClip} />
             {clip && <Bars levels={shape(clip)} color={t.accent} />}
+            {clip && <CleanNoise clip={clip} onClip={setClip} />}
             <Field
               label="Exactly what is said in this part"
               value={transcript}

@@ -19,6 +19,8 @@ export interface Segment {
   /** From "Name (sad):" or "[sad]"; null = the voice's normal tone. */
   emotion: Emotion | null;
   text: string;
+  /** A sound clip to play here instead of speech ([sound: door]). */
+  sound?: string;
   /** Silence after this segment, in seconds. */
   pauseAfter: number;
 }
@@ -43,6 +45,11 @@ export function parseScript(script: string): Segment[] {
     const line = raw.trim();
     if (!line) {
       addPause(BLANK_LINE_PAUSE);
+      continue;
+    }
+    const sl = /^\s*\[\s*(?:sound|sfx|శబ్దం)\s*[:：]\s*([^\]]+?)\s*\]\s*$/i.exec(line);
+    if (sl) {
+      out.push({ speaker, emotion: null, text: '', sound: sl[1], pauseAfter: 0 });
       continue;
     }
     const p = PAUSE.exec(line);
@@ -76,6 +83,11 @@ export function parseScript(script: string): Segment[] {
         addPause(Math.min(30, Number.parseFloat(p[1])));
         continue;
       }
+      const snd = /^\s*(?:sound|sfx|శబ్దం)\s*[:：]\s*(.+?)\s*$/i.exec(inner);
+      if (snd) {
+        out.push({ speaker, emotion: null, text: '', sound: snd[1], pauseAfter: 0 });
+        continue;
+      }
       const e = toEmotion(inner);
       if (e) emotion = e;
     }
@@ -87,6 +99,6 @@ export function parseScript(script: string): Segment[] {
 /** Speakers in order of first appearance. */
 export function speakersOf(segments: Segment[]): string[] {
   const seen: string[] = [];
-  for (const s of segments) if (s.speaker && !seen.includes(s.speaker)) seen.push(s.speaker);
+  for (const s of segments) if (s.speaker && !s.sound && !seen.includes(s.speaker)) seen.push(s.speaker);
   return seen;
 }

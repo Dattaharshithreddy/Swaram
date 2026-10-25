@@ -5,10 +5,10 @@ import { Alert, Linking, Pressable, Text, View } from 'react-native';
 import { usePlayer } from '../components/player';
 import { Badge, Button, Card, Empty, Header, Icon, Notice, ProgressBar, Screen } from '../components/ui';
 import { forgetTraining, startTraining } from '../edge/kaggleTraining';
-import { deletePersonal, importPersonal } from '../edge/personal';
+import { deletePersonal } from '../edge/personal';
 import { EMOTION_INFO, EMOTIONS } from '../edge/emotions';
 import { deleteVoice, emotionRecording, exportForTraining, hasRecording, recordingFile } from '../edge/store';
-import { keyOf, type VoiceRef } from '../edge/voices';
+import { exportVoice, importVoice, keyOf, type VoiceRef } from '../edge/voices';
 import { languageByCode } from '../languages';
 import { useApp } from '../state';
 import { font, space, useTheme } from '../theme';
@@ -122,6 +122,21 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
           <Button title={player.isPlaying(rec) ? 'Pause' : 'Recording'} icon={player.isPlaying(rec) ? 'pause' : 'play'} kind="secondary" small style={{ flex: 1 }} onPress={() => void player.toggle(rec)} />
         )}
         <Button
+          title="Share"
+          icon="share-2"
+          kind="secondary"
+          small
+          style={{ flex: 1 }}
+          onPress={async () => {
+            try {
+              const uri = await exportVoice(v);
+              await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: `Share ${v.voice.name}` });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        />
+        <Button
           title="Use in Studio"
           icon="file-text"
           kind="secondary"
@@ -169,8 +184,9 @@ export function VoicesTab() {
     const res = await DocumentPicker.getDocumentAsync({ type: ['application/zip', 'application/octet-stream', '*/*'], copyToCacheDirectory: true });
     if (res.canceled || !res.assets?.[0]) return;
     try {
-      await importPersonal(res.assets[0].uri);
+      const name = await importVoice(res.assets[0].uri);
       app.refreshVoices();
+      Alert.alert('Voice added', `"${name}" is ready to use.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -219,7 +235,8 @@ export function VoicesTab() {
         app.voices.map((v, i) => <VoiceCard key={keyOf(v)} v={v} index={i} />)
       )}
       <View style={{ gap: space.sm }}>
-        <Button title="Import a fast voice (.zip)" icon="download" kind="secondary" onPress={importFast} />
+        <Button title="Import a shared voice (.zip)" icon="download" kind="secondary" onPress={importFast} />
+        <Notice text="Voices are shared as a file with Share on a voice card. Only share voices you have permission for." />
         <Pressable accessibilityRole="button" onPress={exportOne} style={{ alignSelf: 'center', padding: 8 }}>
           <Text style={{ color: t.soft, fontFamily: font.semibold, fontSize: 13 }}>Export a recording for training by hand</Text>
         </Pressable>

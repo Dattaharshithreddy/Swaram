@@ -30,6 +30,12 @@ export interface SwaramEdgeNative {
   synthesize(ids: number[], refMelPath: string, schedule: number[], outPath: string, opts: SynthOptions): Promise<SynthTiming>;
   /** Any audio file Android can play -> mono float32 at 24 kHz in outPath. Returns samples. */
   decodeAudio(src: string, outPath: string, maxSeconds: number): Promise<number>;
+  /** Music under a voice WAV (looped, ducked under speech, faded). Returns samples. */
+  mixMusic(voiceWav: string, music: string, outWav: string, gain: number, duck: boolean, fadeSec: number): Promise<number>;
+  /** Reduces steady background noise in a float32 file (strength 0-1). Returns samples. */
+  denoise(inPath: string, outPath: string, strength: number): Promise<number>;
+  /** A video with its sound replaced by the .m4a. */
+  muxVideo(video: string, audioM4a: string, outMp4: string): Promise<number>;
   /** 16-bit WAV -> AAC .m4a. Returns samples. */
   encodeM4a(wavPath: string, outPath: string, bitrate: number): Promise<number>;
   /** Joins float32 part files into one 16-bit WAV with cross-fades. Returns samples. */

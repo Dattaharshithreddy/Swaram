@@ -2,6 +2,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import { SwaramEdge } from '../../modules/swaram-edge';
 import { usePlayer } from '../components/player';
 import { Badge, Button, Card, CardTitle, Chip, Empty, Field, Header, Icon, IconButton, Label, Notice, ProgressBar, Screen, Segmented } from '../components/ui';
 import { VoicePicker } from '../components/VoicePicker';
@@ -9,11 +11,16 @@ import { downloadAudio, downloadSubtitles, shareAudio } from '../download';
 import { encodeWav } from '../edge/dsp';
 import { readFloats } from '../edge/engine';
 import {
+  createDubJob,
   createScriptJob,
   deleteJob,
   isFinished,
   jobVoiceKeys,
+  addMusic,
+  finalAudio,
   outputFile,
+  removeMusic,
+  setMusicVolume,
   partFile,
   partsDone,
   redoPart,
@@ -25,6 +32,8 @@ import {
 import { type Emotion, EMOTION_INFO, EMOTIONS } from '../edge/emotions';
 import { duration } from '../edge/recent';
 import { parseScript, speakersOf } from '../edge/script';
+import { deleteSound, importSound, listSounds, type Sound } from '../edge/sounds';
+import { parseSrt } from '../edge/srt';
 import { displayName, findVoice, keyOf, matchSpeaker, type VoiceRef } from '../edge/voices';
 import { guidanceFor, QUALITY, SPEEDS, useApp } from '../state';
 import { font, radius, space, speakerColors, useTheme } from '../theme';
@@ -54,7 +63,10 @@ export function StudioScreen() {
   const t = useTheme();
   const app = useApp();
   const { voices, prefs, updatePrefs, running } = app;
-  const [view, setView] = useState<'write' | 'lines'>('write');
+  const [view, setView] = useState<'write' | 'lines' | 'dub'>('write');
+  const [srt, setSrt] = useState<{ name: string; text: string } | null>(null);
+  const [sounds, setSounds] = useState<Sound[]>(() => listSounds());
+  const [soundName, setSoundName] = useState('');
   const [script, setScript] = useState(prefs.draft);
   const [title, setTitle] = useState(prefs.draftTitle);
   const [picker, setPicker] = useState<{ speaker: string | null } | null>(null);
@@ -72,8 +84,11 @@ export function StudioScreen() {
   }, [script, title, updatePrefs]);
 
   const segments = useMemo(() => parseScript(script), [script]);
-  const speakers = useMemo(() => speakersOf(segments), [segments]);
-  const hasUnlabelled = segments.some((s) => s.speaker === null);
+  const cues = useMemo(() => (srt ? parseSrt(srt.text) : []), [srt]);
+  const dubSegments = useMemo(() => cues.flatMap((c) => parseScript(c.text).slice(0, 1)), [cues]);
+  const active = view === 'dub' ? dubSegments : segments;
+  const speakers = useMemo(() => speakersOf(active), [active]);
+  const hasUnlabelled = active.some((s) => s.speaker === null && !s.sound);
   const defaultVoice = findVoice(prefs.defaultVoice, voices) ?? voices[0];
 
   const voiceForSpeaker = (sp: string | null): VoiceRef | undefined => {
@@ -98,11 +113,37 @@ export function StudioScreen() {
     }
   }
 
+  async function loadSrt() {
+    const res = await DocumentPicker.getDocumentAsync({ type: ['application/x-subrip', 'text/*', '*/*'], copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    try {
+      const text = await new File(res.assets[0].uri).text();
+      if (!parseSrt(text).length) throw new Error('No subtitles found in this file. Use a .srt file.');
+      setSrt({ name: res.assets[0].name, text });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function addSound() {
+    const res = await DocumentPicker.getDocumentAsync({ type: ['audio/*', 'video/*'], copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    try {
+      const name = soundName.trim() || res.assets[0].name.replace(/\.[^.]+$/, '');
+      await importSound(res.assets[0].uri, name);
+      setSounds(listSounds());
+      setSoundName('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function make() {
     setError(null);
     try {
       if (usesBig && !app.installed) throw new Error('Download the offline model in Settings to use big-model voices.');
-      const job = createScriptJob(script, {
+      const build = view === 'dub' ? (o: Parameters<typeof createScriptJob>[1]) => createDubJob(srt?.text ?? '', { ...o, title: title || srt?.name.replace(/\.[^.]+$/, '') }) : (o: Parameters<typeof createScriptJob>[1]) => createScriptJob(script, o);
+      const job = build({
         title,
         steps: prefs.steps,
         guidance: guidanceFor(prefs.steps),
@@ -147,7 +188,8 @@ export function StudioScreen() {
       <Segmented
         options={[
           { key: 'write', label: 'Write' },
-          { key: 'lines', label: speakers.length ? `Lines & voices (${speakers.length})` : 'Lines & voices' },
+          { key: 'lines', label: view !== 'dub' && speakers.length ? `Voices (${speakers.length})` : 'Voices' },
+          { key: 'dub', label: 'Dub' },
         ]}
         value={view}
         onChange={setView}
@@ -186,6 +228,66 @@ export function StudioScreen() {
               </Pressable>
             ))}
           </View>
+          <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: t.surface2, paddingTop: space.md }}>
+            <Label>Sound clips</Label>
+            <Notice text="Your own sounds (door, bell, applause…). Tap one to put it in the script as [sound: name]." />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {sounds.map((snd) => (
+                <Pressable
+                  key={snd.name}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Insert sound ${snd.name}`}
+                  onPress={() => setScript((cur) => `${cur}${cur && !cur.endsWith('\n') ? '\n' : ''}[sound: ${snd.name}]\n`)}
+                  onLongPress={() =>
+                    Alert.alert(`Delete the sound "${snd.name}"?`, '', [
+                      { text: 'Keep' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          deleteSound(snd.name);
+                          setSounds(listSounds());
+                        },
+                      },
+                    ])
+                  }
+                >
+                  <Badge text={`${snd.name} · ${snd.seconds.toFixed(1)}s`} icon="music" />
+                </Pressable>
+              ))}
+            </View>
+            <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-end' }}>
+              <View style={{ flex: 1 }}>
+                <Field value={soundName} onChangeText={setSoundName} placeholder="Name, e.g. door" autoCapitalize="none" />
+              </View>
+              <Button title="Add sound" icon="plus" kind="secondary" small onPress={addSound} style={{ minHeight: 48 }} />
+            </View>
+          </View>
+        </Card>
+      ) : view === 'dub' ? (
+        <Card>
+          <Label>Dub from subtitles</Label>
+          <Notice text="Load a Telugu .srt file: every subtitle is spoken in your voice at its time, sped up a little if it's too long. Subtitles can start with a name (Amma: …) and use emotion tags. Afterwards you can put the new voice onto your video." />
+          <Button title={srt ? `Change file · ${srt.name}` : 'Load .srt file'} icon="upload" kind={srt ? 'secondary' : 'primary'} onPress={loadSrt} />
+          {srt && cues.length > 0 && (
+            <Notice text={`${cues.length} subtitles · ${Math.floor(cues[cues.length - 1].end / 60)}:${String(Math.round(cues[cues.length - 1].end % 60)).padStart(2, '0')} long${speakers.length ? ` · speakers: ${speakers.join(', ')}` : ''}`} kind="ok" />
+          )}
+          {[...(hasUnlabelled ? [null] : []), ...speakers].map((sp) => {
+            const v = voiceForSpeaker(sp);
+            return (
+              <View key={sp ?? '__default'} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}>
+                <Text numberOfLines={1} style={{ color: t.ink, fontFamily: font.semibold, fontSize: 14, flex: 1 }}>{sp ?? 'Subtitles without a name'}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setPicker({ speaker: sp })}
+                  style={{ minHeight: 40, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: v ? t.lineStrong : t.accent, backgroundColor: t.field, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                >
+                  <Text style={{ color: v ? (v.kind === 'fast' ? t.goldText : t.ink) : t.accent, fontFamily: font.semibold, fontSize: 13 }}>{v ? displayName(v) : 'Choose voice'}</Text>
+                  <Icon name="chevron-down" size={14} color={t.soft} />
+                </Pressable>
+              </View>
+            );
+          })}
         </Card>
       ) : (
         <>
@@ -258,10 +360,10 @@ export function StudioScreen() {
         </View>
         {missing.length > 0 && <Notice text={`Choose a voice for: ${missing.join(', ')} (Lines & voices tab).`} kind="error" />}
         <Button
-          title={running ? 'Another script is being made…' : voiceCount > 1 ? `Make voice-over · ${voiceCount} voices` : 'Make voice-over'}
+          title={running ? 'Another script is being made…' : view === 'dub' ? 'Make dub' : voiceCount > 1 ? `Make voice-over · ${voiceCount} voices` : 'Make voice-over'}
           icon="mic"
           onPress={make}
-          disabled={!script.trim() || missing.length > 0 || running !== null}
+          disabled={(view === 'dub' ? !cues.length : !script.trim()) || missing.length > 0 || running !== null}
         />
         {error && <Notice text={error} kind="error" />}
       </Card>
@@ -292,6 +394,32 @@ function Projects({ openJob, setOpenJob }: { openJob: string | null; setOpenJob:
   const app = useApp();
   const { jobs, running } = app;
   const player = usePlayer();
+  const [musicFor, setMusicFor] = useState<string | null>(null);
+  const [videoBusy, setVideoBusy] = useState<string | null>(null);
+
+  async function makeVideo(job: ScriptJob) {
+    const res = await DocumentPicker.getDocumentAsync({ type: ['video/*'], copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0] || !SwaramEdge) return;
+    setVideoBusy(job.id);
+    try {
+      const audio = new File(Paths.cache, `swaram-video-audio-${job.id}.m4a`);
+      const out = new File(Paths.cache, `swaram-video-${job.id}.mp4`);
+      for (const f of [audio, out]) if (f.exists) f.delete();
+      await SwaramEdge.encodeM4a(finalAudio(job).uri, audio.uri, 128000);
+      await SwaramEdge.muxVideo(res.assets[0].uri, audio.uri, out.uri);
+      const safe = job.title.replace(/[^A-Za-z0-9\u0C00-\u0C7F]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'swaram';
+      const where = await SwaramEdge.saveToDownloads(out.uri, `${safe}-dubbed.mp4`, 'video/mp4');
+      Alert.alert('Video ready', `Saved to ${where}.`, [
+        { text: 'OK' },
+        { text: 'Share', onPress: () => void Sharing.shareAsync(out.uri, { mimeType: 'video/mp4' }) },
+      ]);
+    } catch (e) {
+      Alert.alert('Could not make the video', e instanceof Error ? e.message : String(e));
+    } finally {
+      setVideoBusy(null);
+    }
+  }
+
   if (jobs.length === 0) return null;
   return (
     <View style={{ gap: space.sm }}>
@@ -305,7 +433,7 @@ function Projects({ openJob, setOpenJob }: { openJob: string | null; setOpenJob:
         const perPart = done > 0 ? job.computeSeconds / Math.max(1, partsDone(job)) : 0;
         const left = perPart * (job.parts.length - done);
         const voicesLabel = jobVoiceKeys(job).map((k) => job.voiceNames[k] ?? 'voice').join(', ');
-        const out = outputFile(job);
+        const out = finalAudio(job);
         return (
           <View key={job.id} style={{ backgroundColor: t.surface, borderColor: t.line, borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 }}>
             <Pressable accessibilityRole="button" onPress={() => setOpenJob(openJob === job.id ? null : job.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
@@ -334,6 +462,8 @@ function Projects({ openJob, setOpenJob }: { openJob: string | null; setOpenJob:
                   <Button title="Download" icon="download" kind="secondary" small onPress={() => void downloadAudio(out.uri, job.title)} />
                   <Button title="Share" icon="share-2" kind="secondary" small onPress={() => void shareAudio(out.uri)} />
                   {srtFile(job).exists && <Button title="Subtitles" icon="type" kind="secondary" small onPress={() => void downloadSubtitles(srtFile(job).uri, job.title)} />}
+                  <Button title={job.music ? 'Music ✓' : 'Add music'} icon="music" kind="secondary" small onPress={() => setMusicFor(musicFor === job.id ? null : job.id)} />
+                  <Button title="Put on a video" icon="film" kind="secondary" small busy={videoBusy === job.id} onPress={() => void makeVideo(job)} />
                 </>
               ) : isRunning ? (
                 <Button title={running?.stop ? 'Stopping after this part…' : 'Stop'} icon="square" kind="secondary" small onPress={app.stopJob} />
@@ -362,12 +492,78 @@ function Projects({ openJob, setOpenJob }: { openJob: string | null; setOpenJob:
                 />
               )}
             </View>
+            {musicFor === job.id && finished && <MusicPanel job={job} onChanged={app.refreshJobs} />}
             {openJob === job.id && <JobLines job={job} />}
           </View>
         );
       })}
     </View>
   );
+}
+
+/** Background music under a finished project: pick a file, set the volume, remove. */
+function MusicPanel({ job, onChanged }: { job: ScriptJob; onChanged: () => void }) {
+  const t = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const levels = [
+    { gain: 0.12, label: 'Soft' },
+    { gain: 0.22, label: 'Medium' },
+    { gain: 0.38, label: 'Loud' },
+  ];
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={{ gap: space.sm, backgroundColor: t.bg, borderRadius: 12, padding: 12 }}>
+      <Label>Background music</Label>
+      <Notice text="Any song or music file. It loops under the voice, dips while someone speaks, and fades in and out. Use music you have the rights to." />
+      {job.music ? (
+        <>
+          <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 13 }}>♪ {job.music.name}</Text>
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            {levels.map((l) => (
+              <Chip key={l.label} label={l.label} selected={Math.abs((job.music?.gain ?? 0) - l.gain) < 0.01} onPress={() => void run(() => setMusicVolume(job, l.gain))} />
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            <Button title="Change music" icon="refresh-cw" kind="secondary" small busy={busy} onPress={() => void pick()} />
+            <Button
+              title="Remove music"
+              icon="x"
+              kind="danger"
+              small
+              onPress={() => {
+                removeMusic(job);
+                onChanged();
+              }}
+            />
+          </View>
+        </>
+      ) : (
+        <Button title="Choose music file" icon="music" small busy={busy} onPress={() => void pick()} />
+      )}
+      {error && <Notice text={error} kind="error" />}
+    </View>
+  );
+
+  async function pick() {
+    const res = await DocumentPicker.getDocumentAsync({ type: ['audio/*'], copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    await run(() => addMusic(job, a.uri, a.name.replace(/\.[^.]+$/, ''), job.music?.gain ?? 0.22));
+  }
 }
 
 /** Every part of a project: play it, change its voice or words, make it again. */

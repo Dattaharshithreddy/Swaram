@@ -1,6 +1,7 @@
 import { File, Paths } from 'expo-file-system';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
+import { CleanNoise } from '../components/CleanNoise';
 import { usePlayer } from '../components/player';
 import { clipShape, useRecorder } from '../components/recorder';
 import { Badge, Button, Card, Chip, Field, Header, Icon, Label, Notice, Screen, Segmented } from '../components/ui';
@@ -173,6 +174,7 @@ export function EmotionScreen({ voiceId }: { voiceId: string }) {
             <Button title="Discard" icon="trash-2" kind="danger" small style={{ flex: 1 }} onPress={rec.reset} />
           </View>
         )}
+        {rec.clip && !rec.isStreaming && <CleanNoise clip={rec.clip} onClip={rec.setClip} />}
         <Button title={`Save ${EMOTION_INFO[emotion].label.toLowerCase()} tone`} icon="check" onPress={save} busy={busy} disabled={!rec.clip || !text.trim() || rec.isStreaming} />
         {(error || rec.error) && <Notice text={error ?? rec.error ?? ''} kind="error" />}
       </Card>
