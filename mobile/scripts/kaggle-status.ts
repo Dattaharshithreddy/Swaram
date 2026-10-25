@@ -23,6 +23,11 @@ for (const k of data.kernels ?? []) {
   if (!slug || /check/.test(slug)) continue;
   const s = await runStatus(auth, slug).catch((e) => ({ state: `? ${e}` }));
   let files = '';
+  if (s.state === 'error') {
+    const out = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
+    const lines = (out.log ?? '').split('\n').filter((l) => /Error|Traceback|error:|No module|assert|Killed|CUDA|exit status/i.test(l) && !/NbConvert|Warning/.test(l));
+    files = `errors: ${lines.slice(-12).join(' // ').slice(0, 1500)}`;
+  }
   if (s.state === 'complete') {
     const out = await runOutputs(auth, slug).catch(() => ({ files: [] as { fileName: string }[] }));
     files = out.files.map((f) => f.fileName).filter((n) => /zip|safetensors|json|wav/.test(n)).slice(0, 6).join(', ');
