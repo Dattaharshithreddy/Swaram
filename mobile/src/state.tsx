@@ -32,7 +32,7 @@ import { FastVoice, type PersonalVoice } from './edge/personal';
 import { applyPronunciations, getPrefs, type Prefs, setPrefs } from './edge/prefs';
 import { addRecent, listRecent, type RecentItem } from './edge/recent';
 import { checkRender, forgetRender, listRenders, type Render, startRender as startRenderOnKaggle } from './edge/kaggleRender';
-import { loadEmotionData, loadVoiceData, modelDir, modelInstalled, refreshVoice, saveAudio, studioInstalled } from './edge/store';
+import { downloadModel, downloadStudio, loadEmotionData, loadVoiceData, modelDir, modelInstalled, refreshVoice, saveAudio, type StudioDownload, studioInstalled } from './edge/store';
 import { type Emotion, EMOTION_STYLE } from './edge/emotions';
 import { parseScript } from './edge/script';
 import { prepareText } from './edge/telugu';
@@ -105,6 +105,20 @@ interface AppState {
   renders: Render[];
   startRender: (job: ScriptJob) => Promise<void>;
   dismissRender: (r: Render) => void;
+
+  /** Downloads run here (not in a screen) so they continue when you switch screens or leave the app. */
+  downloads: Partial<Record<DownloadKind, DownloadState>>;
+  startDownload: (kind: DownloadKind) => Promise<void>;
+  cancelDownload: (kind: DownloadKind) => void;
+}
+
+export type DownloadKind = 'model' | 'studio';
+export interface DownloadState {
+  bytes: number;
+  total: number;
+  status: string;
+  running: boolean;
+  error?: string;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -130,6 +144,8 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
   const [creds, setCredsState] = useState<Credentials | null>(null);
   const [trainings, setTrainings] = useState<Training[]>(() => listTrainings());
   const [renders, setRenders] = useState<Render[]>(() => listRenders());
+  const [downloads, setDownloads] = useState<Partial<Record<DownloadKind, DownloadState>>>({});
+  const dlControl = useRef<Partial<Record<DownloadKind, StudioDownload>>>({});
   const [checkingTrainings, setChecking] = useState(false);
 
   const engine = useRef<EdgeEngine | null>(null);
@@ -366,6 +382,57 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
     [creds],
   );
 
+  const startDownload = useCallback(
+    async (kind: DownloadKind) => {
+      if (dlControl.current[kind] && !dlControl.current[kind]?.cancelled) return;
+      const ctl: StudioDownload = { cancelled: false };
+      dlControl.current[kind] = ctl;
+      const label = kind === 'model' ? 'voice model' : 'Studio quality';
+      const set = (d: Partial<DownloadState>) =>
+        setDownloads((all) => ({ ...all, [kind]: { bytes: 0, total: 0, status: '', running: true, ...all[kind], ...d } }));
+      set({ bytes: 0, total: 0, status: 'Connecting…', running: true, error: undefined });
+      const edge = SwaramEdge;
+      edge?.requestNotifications();
+      edge?.startBackground(`Swaram: downloading ${label}`, 'Starting…');
+      let lastPct = -1;
+      const progress = (bytes: number, total: number) => {
+        set({ bytes, total });
+        const pct = total ? Math.floor((bytes / total) * 100) : 0;
+        if (pct !== lastPct) {
+          lastPct = pct;
+          edge?.updateBackground(`Swaram: downloading ${label}`, `${(bytes / 1e6).toFixed(0)} of ${(total / 1e6).toFixed(0)} MB`, pct, 100);
+        }
+      };
+      try {
+        if (kind === 'model') {
+          await downloadModel((b, t) => progress(b, t), ctl);
+          setInstalled(modelInstalled());
+        } else {
+          await downloadStudio(progress, ctl, (status) => set({ status }));
+          updatePrefs({ studio: true });
+          await engine.current?.release();
+          engine.current = null;
+        }
+        setDownloads((all) => ({ ...all, [kind]: undefined }));
+      } catch (e) {
+        setDownloads((all) => ({ ...all, [kind]: ctl.cancelled ? undefined : { bytes: 0, total: 0, status: '', running: false, error: friendlyError(e, 'download') } }));
+      } finally {
+        edge?.stopBackground();
+        dlControl.current[kind] = undefined;
+      }
+    },
+    [updatePrefs],
+  );
+
+  const cancelDownload = useCallback((kind: DownloadKind) => {
+    const ctl = dlControl.current[kind];
+    if (ctl) {
+      ctl.cancelled = true;
+      ctl.cancel?.();
+    }
+    setDownloads((all) => ({ ...all, [kind]: undefined }));
+  }, []);
+
   const dismissRender = useCallback((r: Render) => {
     forgetRender(r);
     setRenders(listRenders());
@@ -416,12 +483,15 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
       renders,
       startRender,
       dismissRender,
+      downloads,
+      startDownload,
+      cancelDownload,
       trainings,
       refreshTrainings,
       checkTrainings,
       checkingTrainings,
     }),
-    [tab, page, installed, refreshModel, voices, refreshVoices, prefs, updatePrefs, engineLoading, getEngine, releaseEngine, makerFor, prepare, speakQuick, recent, refreshRecent, jobs, refreshJobs, running, startJob, stopJob, jobError, creds, trainings, refreshTrainings, checkTrainings, checkingTrainings, renders, startRender, dismissRender],
+    [tab, page, installed, refreshModel, voices, refreshVoices, prefs, updatePrefs, engineLoading, getEngine, releaseEngine, makerFor, prepare, speakQuick, recent, refreshRecent, jobs, refreshJobs, running, startJob, stopJob, jobError, creds, trainings, refreshTrainings, checkTrainings, checkingTrainings, renders, startRender, dismissRender, downloads, startDownload, cancelDownload],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

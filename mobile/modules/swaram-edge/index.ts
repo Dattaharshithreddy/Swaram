@@ -39,6 +39,10 @@ export interface SwaramEdgeNative {
   polish(inPath: string, outPath: string): Promise<number>;
   /** Joins files in order into outPath and deletes them. Returns bytes. */
   concatFiles(parts: string[], outPath: string): Promise<number>;
+  /** Waits ms on a native thread (works while the app is in the background, unlike setTimeout). */
+  sleep(ms: number): Promise<void>;
+  /** Hides the app (like Home) instead of closing it. */
+  moveToBack(): boolean;
   /** A video with its sound replaced by the .m4a. */
   muxVideo(video: string, audioM4a: string, outMp4: string): Promise<number>;
   /** 16-bit WAV -> AAC .m4a. Returns samples. */

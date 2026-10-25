@@ -3,6 +3,7 @@ import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav } from './dsp';
 import { friendlyError, isNetworkError } from '../errors';
+import { wait } from './wait';
 import { type Emotion, EMOTIONS } from './emotions';
 import type { EdgeVoiceData } from './engine';
 
@@ -69,7 +70,7 @@ export function deleteModel(): void {
  * Download the model files (~450 MB). Files already complete are skipped,
  * so an interrupted download resumes where it stopped.
  */
-export async function downloadModel(onProgress: (bytes: number, total: number, file: string) => void, signal?: { cancelled: boolean }) {
+export async function downloadModel(onProgress: (bytes: number, total: number, file: string) => void, signal?: { cancelled: boolean; cancel?: () => void }) {
   const dir = modelDir();
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
 
@@ -114,13 +115,20 @@ export async function downloadModel(onProgress: (bytes: number, total: number, f
       if (target.exists) target.delete();
       const task = new DownloadTask(MODEL_BASE_URL + name, target);
       const sub = task.addListener('progress', (p) => onProgress(done + p.bytesWritten, total, name));
+      if (signal) {
+        signal.cancel = () => {
+          signal.cancelled = true;
+          task.cancel();
+        };
+      }
       try {
         const file = await task.downloadAsync();
-        if (!file) throw new Error('Download cancelled');
+        if (!file || signal?.cancelled) throw new Error('Download cancelled');
         break;
       } catch (e) {
-        if (signal?.cancelled || attempt >= 4 || !isNetworkError(e)) throw e;
-        await new Promise((r) => setTimeout(r, 3000 * attempt));
+        if (signal?.cancelled) throw new Error('Download cancelled');
+        if (attempt >= 4 || !isNetworkError(e)) throw e;
+        await wait(3000 * attempt);
       } finally {
         sub.remove();
       }
@@ -167,11 +175,14 @@ export interface StudioDownload {
 
 async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), ms);
+  let done = false;
+  void wait(ms).then(() => {
+    if (!done) ctl.abort();
+  });
   try {
     return await fetch(url, { signal: ctl.signal });
   } finally {
-    clearTimeout(timer);
+    done = true;
   }
 }
 
@@ -229,12 +240,17 @@ export async function downloadStudio(
         last = Date.now();
         onProgress(before + Math.min(p.bytesWritten, want), total);
       });
-      const watchdog = setInterval(() => {
-        if (Date.now() - last > 45000) {
-          stalled = true;
-          task.cancel();
+      let watching = true;
+      void (async () => {
+        while (watching) {
+          await wait(5000);
+          if (watching && Date.now() - last > 45000) {
+            stalled = true;
+            task.cancel();
+            return;
+          }
         }
-      }, 5000);
+      })();
       control.cancel = () => {
         control.cancelled = true;
         task.cancel();
@@ -254,13 +270,13 @@ export async function downloadStudio(
         }
         if (attempt >= 5 || (!stalled && !isNetworkError(e))) throw e;
       } finally {
-        clearInterval(watchdog);
+        watching = false;
         sub.remove();
         control.cancel = undefined;
       }
       if (ok) break;
       if (control.cancelled) throw new Error('Download cancelled');
-      await new Promise((r) => setTimeout(r, 2000 * attempt));
+      await wait(2000 * attempt);
     }
     onProgress(doneBytes(), total);
   }

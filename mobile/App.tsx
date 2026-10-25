@@ -8,8 +8,9 @@ import {
 } from '@expo-google-fonts/plus-jakarta-sans';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SwaramEdge } from './modules/swaram-edge';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { PlayerProvider } from './src/components/player';
 import { Icon, type IconName } from './src/components/ui';
@@ -73,6 +74,27 @@ export default function App() {
 function Main() {
   const t = useTheme();
   const { tab, setTab, page, setPage } = useApp();
+
+  // Back closes a page, then goes Home; on Home it hides the app instead of closing it,
+  // so scripts and downloads keep running (closing would stop them).
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (page) {
+        setPage(null);
+        return true;
+      }
+      if (tab !== 'home') {
+        setTab('home');
+        return true;
+      }
+      try {
+        return SwaramEdge?.moveToBack() ?? false;
+      } catch {
+        return false;
+      }
+    });
+    return () => sub.remove();
+  }, [page, tab, setPage, setTab]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={['top', 'left', 'right']}>

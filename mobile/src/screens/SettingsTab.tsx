@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Linking, Pressable, Text, View } from 'react-native';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { Button, Card, Chip, Field, Header, Icon, Label, Notice, ProgressBar, Row, Screen } from '../components/ui';
@@ -35,8 +35,6 @@ export function SettingsTab() {
   const t = useTheme();
   const app = useApp();
   const { prefs, updatePrefs } = app;
-  const [download, setDownload] = useState<{ bytes: number; total: number; file: string } | null>(null);
-  const cancel = useRef({ cancelled: false });
   const [error, setError] = useState<string | null>(null);
   const [editingKeys, setEditingKeys] = useState(false);
   const [draft, setDraft] = useState<Credentials>({ username: '', token: '', hfToken: '' });
@@ -54,19 +52,8 @@ export function SettingsTab() {
   const keysReady = !!c?.username && !!c.token && !!c.hfToken;
   const mb = (b: number) => `${(b / 1e6).toFixed(0)} MB`;
 
-  async function startDownload() {
-    setError(null);
-    cancel.current = { cancelled: false };
-    setDownload({ bytes: 0, total: 0, file: '' });
-    try {
-      await downloadModel((bytes, total, file) => setDownload({ bytes, total, file }), cancel.current);
-      app.refreshModel();
-    } catch (e) {
-      setError(friendlyError(e, 'download'));
-    } finally {
-      setDownload(null);
-    }
-  }
+  const download = app.downloads.model;
+  const startDownload = () => void app.startDownload('model');
 
   return (
     <Screen>
@@ -111,13 +98,13 @@ export function SettingsTab() {
                 />
               }
             />
-          ) : download ? (
+          ) : download?.running ? (
             <View style={{ gap: space.sm, paddingVertical: 14 }}>
-              <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 14 }}>Downloading {download.file || 'the model'}…</Text>
+              <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 14 }}>Downloading the voice model…</Text>
               <ProgressBar value={download.total ? download.bytes / download.total : 0} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Notice text={download.total ? `${mb(download.bytes)} of ${mb(download.total)}` : 'Starting…'} />
-                <Button title="Cancel" kind="secondary" small onPress={() => (cancel.current.cancelled = true)} />
+                <Button title="Cancel" kind="secondary" small onPress={() => app.cancelDownload('model')} />
               </View>
             </View>
           ) : (
@@ -165,7 +152,7 @@ export function SettingsTab() {
             </View>
           </View>
         </Card>
-        {error && <Notice text={error} kind="error" />}
+        {(error || download?.error) && <Notice text={(error || download?.error) as string} kind="error" />}
       </Section>
 
       <Section title="Fast voice training (free)">

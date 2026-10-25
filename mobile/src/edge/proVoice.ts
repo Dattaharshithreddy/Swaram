@@ -11,6 +11,7 @@ import { encodeWav, SAMPLE_RATE } from './dsp';
 import { createPrivateDataset, datasetStatus, type KaggleAuth, pushNotebook } from './kaggle';
 import { type Credentials, listTrainings, saveTrainings, type Training } from './kaggleTraining';
 import { PRO_SENTENCES } from './proSentences';
+import { wait } from './wait';
 import type { OfflineVoice } from './store';
 
 const TEMPLATE_URL = 'https://raw.githubusercontent.com/Dattaharshithreddy/Swaram/main/cloud/swaram_pro_voice.ipynb';
@@ -121,7 +122,7 @@ export async function startStudioVoice(v: OfflineVoice, creds: Credentials, onSt
     const s = await datasetStatus(auth, dataSlug).catch(() => '');
     if (s.includes('ready') || s.includes('complete')) break;
     if (s.includes('error') || s.includes('fail')) throw new Error('Kaggle could not process the recordings. Try again.');
-    await new Promise((r) => setTimeout(r, 5000));
+    await wait(5000);
   }
   onStep('Starting the training…');
   const res = await fetch(`${TEMPLATE_URL}?t=${Date.now()}`);

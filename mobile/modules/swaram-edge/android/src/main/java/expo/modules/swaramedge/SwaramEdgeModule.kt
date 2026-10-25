@@ -97,6 +97,9 @@ class SwaramEdgeModule : Module() {
   // the model on one, audio tools on another, so playing a finished line never waits for generation.
   private val modelPool: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "swaram-model") }
   private val toolPool: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "swaram-tools") }
+  private val timerPool: ExecutorService = Executors.newCachedThreadPool { r -> Thread(r, "swaram-timer") }
+  private val bgLock = Any()
+  private var bgUsers = 0
 
   private fun off(pool: ExecutorService, promise: Promise, block: () -> Any?) {
     pool.execute {
@@ -465,6 +468,7 @@ class SwaramEdgeModule : Module() {
 
     Function("startBackground") { title: String, text: String ->
       val ctx = appCtx
+      synchronized(bgLock) { bgUsers++ }
       val intent = Intent(ctx, SwaramWorkService::class.java).putExtra("title", title).putExtra("text", text)
       runCatching {
         if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(intent) else ctx.startService(intent)
@@ -480,10 +484,28 @@ class SwaramEdgeModule : Module() {
       Unit
     }
 
+    // Several things can run at once (a script and a download); the service stops with the last.
     Function("stopBackground") {
       val ctx = appCtx
-      runCatching { ctx.stopService(Intent(ctx, SwaramWorkService::class.java)) }
+      val last = synchronized(bgLock) {
+        bgUsers = maxOf(0, bgUsers - 1)
+        bgUsers == 0
+      }
+      if (last) runCatching { ctx.stopService(Intent(ctx, SwaramWorkService::class.java)) }
       Unit
+    }
+
+    /** Waits on a native thread: JS timers are paused while the app is in the background. */
+    AsyncFunction("sleep") { ms: Int, promise: Promise ->
+      timerPool.execute {
+        Thread.sleep(ms.toLong().coerceIn(0, 600_000))
+        promise.resolve(null)
+      }
+    }
+
+    /** Back on the home screen: hide the app instead of closing it, so work keeps running. */
+    Function("moveToBack") {
+      appContext.currentActivity?.moveTaskToBack(true) ?: false
     }
 
     /** Android 13+: ask once so the progress notification can show. */

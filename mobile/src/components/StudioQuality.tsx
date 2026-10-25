@@ -1,37 +1,17 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Text, View } from 'react-native';
-import { deleteStudio, downloadStudio, type StudioDownload, studioInstalled } from '../edge/store';
-import { friendlyError } from '../errors';
+import { deleteStudio, studioInstalled } from '../edge/store';
 import { useApp } from '../state';
 import { font, space, useTheme } from '../theme';
 import { Button, Chip, Notice, ProgressBar } from './ui';
 
-/** Download and switch for Studio quality (full-precision model, 32 steps). */
+/** Download and switch for Studio quality (full-precision model, 32 steps). The download runs app-wide. */
 export function StudioQuality() {
   const t = useTheme();
   const app = useApp();
-  const [installed, setInstalled] = useState(studioInstalled);
-  const [progress, setProgress] = useState<{ bytes: number; total: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState('');
-  const signal = useRef<StudioDownload>({ cancelled: false });
-
-  async function download() {
-    setError(null);
-    signal.current = { cancelled: false };
-    setProgress({ bytes: 0, total: 0 });
-    setStatus('Connecting…');
-    try {
-      await downloadStudio((bytes, total) => setProgress({ bytes, total }), signal.current, setStatus);
-      setInstalled(true);
-      app.updatePrefs({ studio: true });
-      await app.releaseEngine();
-    } catch (e) {
-      if (!signal.current.cancelled) setError(friendlyError(e, 'download'));
-    } finally {
-      setProgress(null);
-    }
-  }
+  const dl = app.downloads.studio;
+  const [removed, setRemoved] = useState(false);
+  const installed = !removed && !dl?.running && studioInstalled();
 
   async function use(on: boolean) {
     app.updatePrefs({ studio: on });
@@ -58,7 +38,7 @@ export function StudioQuality() {
                   style: 'destructive',
                   onPress: async () => {
                     deleteStudio();
-                    setInstalled(false);
+                    setRemoved(true);
                     await use(false);
                   },
                 },
@@ -68,29 +48,32 @@ export function StudioQuality() {
             Remove Studio quality (frees 1.3 GB)
           </Text>
         </>
-      ) : progress ? (
+      ) : dl?.running ? (
         <>
-          <ProgressBar value={progress.bytes / Math.max(1, progress.total)} />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <ProgressBar value={dl.total ? dl.bytes / dl.total : 0} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm }}>
             <Text style={{ color: t.soft, fontFamily: font.medium, fontSize: 12, flex: 1 }}>
-              {progress.total ? `${status} ${(progress.bytes / 1e6).toFixed(0)} of ${(progress.total / 1e6).toFixed(0)} MB` : status}
+              {dl.total ? `${dl.status} ${(dl.bytes / 1e6).toFixed(0)} of ${(dl.total / 1e6).toFixed(0)} MB` : dl.status}
             </Text>
-            <Button
-              title="Cancel"
-              kind="ghost"
-              small
-              onPress={() => {
-                signal.current.cancelled = true;
-                signal.current.cancel?.();
-                setProgress(null);
-              }}
-            />
+            <Button title="Cancel" kind="ghost" small onPress={() => app.cancelDownload('studio')} />
           </View>
+          <Text style={{ color: t.faint, fontFamily: font.regular, fontSize: 12 }}>
+            Keeps going if you switch screens or leave the app; progress shows in the notification.
+          </Text>
         </>
       ) : (
-        <Button title="Download Studio quality (1.3 GB, Wi-Fi)" icon="download-cloud" kind="secondary" disabled={!app.installed} onPress={download} />
+        <Button
+          title="Download Studio quality (1.3 GB, Wi-Fi)"
+          icon="download-cloud"
+          kind="secondary"
+          disabled={!app.installed}
+          onPress={() => {
+            setRemoved(false);
+            void app.startDownload('studio');
+          }}
+        />
       )}
-      {error && <Notice text={error} kind="error" />}
+      {dl?.error && <Notice text={`${dl.error} Finished parts are kept: tap Download to continue.`} kind="error" />}
     </View>
   );
 }
