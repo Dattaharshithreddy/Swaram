@@ -16,9 +16,18 @@ const notebook = {
   cells: [
     {
       cell_type: 'code',
+      metadata: {},
+      outputs: [],
+      execution_count: null,
       source: 'import os\nos.makedirs("/kaggle/working/output", exist_ok=True)\nopen("/kaggle/working/output/hello.txt", "w").write("swaram ok")\nprint("done")',
     },
   ],
+  metadata: {
+    kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' },
+    language_info: { name: 'python' },
+  },
+  nbformat: 4,
+  nbformat_minor: 4,
 };
 const pushed = await pushNotebook(auth, slug, notebook, { gpu: false, internet: false });
 console.log('pushed', JSON.stringify(pushed));
@@ -30,7 +39,11 @@ for (let i = 0; i < 60; i++) {
   state = s.state;
   if (s.state === 'complete' || s.state === 'error' || s.state === 'cancelled') break;
 }
-if (state !== 'complete') throw new Error(`run ended as ${state}`);
+if (state !== 'complete') {
+  const out = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
+  console.log('log:', (out.log ?? '').slice(-3000));
+  throw new Error(`run ended as ${state}`);
+}
 const out = await runOutputs(auth, slug);
 console.log('files', out.files.map((f) => f.fileName).join(', '));
 const hello = out.files.find((f) => f.fileName.endsWith('hello.txt'));
