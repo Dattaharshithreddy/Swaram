@@ -6,6 +6,8 @@ export interface SynthOptions {
   cfg: number;
   /** Seed for the starting noise. */
   seed: number;
+  /** The first `guided` steps use guidance (two branches); later steps run one branch. */
+  guided: number;
   progressBase: number;
   progressTotal: number;
 }

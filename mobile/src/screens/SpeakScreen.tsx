@@ -6,6 +6,8 @@ import { api, type ServerConfig, type VoiceProfile } from '../api';
 import { Body, Button, Card, Chip, Field, Label, Notice, Title } from '../components/ui';
 import { languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
+import { ReadAs } from '../components/ReadAs';
+import { spokenText } from '../translit';
 
 interface Take {
   uri: string;
@@ -63,7 +65,7 @@ export function SpeakScreen({
     setError(null);
     try {
       await setAudioModeAsync({ playsInSilentMode: true });
-      const file = await api.speak(config, voice.id, text.trim());
+      const file = await api.speak(config, voice.id, spokenText(text.trim(), voice.language));
       const take = { uri: file.uri, voice: voice.name, text: text.trim(), at: Date.now() };
       setTakes((prev) => [take, ...prev].slice(0, 20));
       play(file.uri);
@@ -128,6 +130,7 @@ export function SpeakScreen({
               </Text>
             ) : null}
           </View>
+          <ReadAs text={text} language={voice?.language} onUse={(s) => setText(s.slice(0, MAX_CHARS))} />
           <Button title="Generate" onPress={generate} busy={busy} disabled={!text.trim() || !voice} />
           {busy && <Notice text="Generating on the server. Short lines take a few seconds." />}
           {error && <Notice text={error} kind="error" />}

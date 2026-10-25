@@ -3,7 +3,9 @@ import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
 import type { EdgeVoiceData } from './engine';
 
 export const MODEL_BASE_URL = 'https://github.com/Dattaharshithreddy/Swaram/releases/download/edge-model/';
-export const MODEL_FILES = ['manifest.json', 'vocab.json', 'mel.onnx', 'context.onnx', 'vocoder.onnx', 'step.int8.onnx'];
+export const MODEL_FILES = ['manifest.json', 'vocab.json', 'mel.onnx', 'context.onnx', 'vocoder.onnx', 'flow.int8.onnx'];
+/** Files from older model versions, removed on the next download to free space. */
+const STALE_FILES = ['step.int8.onnx'];
 
 export function modelDir(): Directory {
   return new Directory(Paths.document, 'edge-model');
@@ -33,6 +35,12 @@ export function modelInstalled(): boolean {
   } catch {
     return false;
   }
+}
+
+/** A model from an older app version is on the phone; only the changed part needs downloading. */
+export function modelNeedsUpdate(): boolean {
+  const dir = modelDir();
+  return dir.exists && STALE_FILES.some((n) => new File(dir, n).exists);
 }
 
 export function installedBytes(): number {
@@ -70,6 +78,11 @@ export async function downloadModel(onProgress: (bytes: number, total: number, f
   const manifest: Manifest = JSON.parse(manifestText);
   if (manifestFile.exists) manifestFile.delete();
   manifestFile.writeSync(manifestText);
+
+  for (const name of STALE_FILES) {
+    const old = new File(dir, name);
+    if (old.exists) old.delete();
+  }
 
   const binaries = MODEL_FILES.filter((f) => f !== 'manifest.json');
   const total = binaries.reduce((s, n) => s + (manifest.files[n]?.bytes ?? 0), 0);

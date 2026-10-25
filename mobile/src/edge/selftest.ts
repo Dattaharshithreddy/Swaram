@@ -10,6 +10,7 @@ import { encodeWav, SAMPLE_RATE } from './dsp';
 import { EdgeEngine, type Provider } from './engine';
 import { downloadModel, loadVoiceData, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
 import { prepareText } from './telugu';
+import { spokenText } from '../translit';
 
 function log(msg: string) {
   console.log(`SWARAM_SELFTEST ${msg}`);
@@ -62,8 +63,9 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     log(`voice saved and reloaded frames=${reloaded.frames}`);
 
     const t0 = Date.now();
-    const { wav, timing } = await engine.speak(reloaded, prepareText('ఇది ఒక పరీక్ష. 25 రూపాయలు.', 'te'), {
+    const { wav, timing } = await engine.speak(reloaded, prepareText(spokenText('Idi oka pariksha. 25 rupayalu.', 'te'), 'te'), {
       steps: 4,
+      guidance: 0.5, // exercises both the guided and the single-branch step
       onProgress: (done, total) => log(`step ${done}/${total}`),
     });
     const file = saveAudio(encodeWav(wav));

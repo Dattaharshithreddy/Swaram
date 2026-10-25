@@ -22,19 +22,28 @@ import {
   loadVoiceData,
   modelDir,
   modelInstalled,
+  modelNeedsUpdate,
   type OfflineVoice,
   saveAudio,
   saveVoice,
 } from '../edge/store';
 import { LANGUAGES, type LanguageCode, languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
+import { ReadAs } from '../components/ReadAs';
+import { spokenText } from '../translit';
 
 const INDIC = LANGUAGES.filter((l) => l.code !== 'en');
+// guidance: share of steps (from the start) that use guidance; the rest cost half.
 const QUALITY = [
-  { steps: 8, label: 'Fast · 8' },
-  { steps: 16, label: 'Balanced · 16' },
-  { steps: 32, label: 'Best · 32' },
+  { steps: 8, guidance: 0.6, label: 'Fast · 8' },
+  { steps: 16, guidance: 0.75, label: 'Balanced · 16' },
+  { steps: 32, guidance: 1.0, label: 'Best · 32' },
 ];
+// Offline voices use a shorter reading: every second of the reference is
+// processed again on each step, so 5 s instead of 8 s is about a third faster.
+const OFFLINE_READ: Record<string, string> = {
+  te: 'నమస్కారం, ఈ రోజు వాతావరణం చాలా బాగుంది. నేను బయటికి వెళ్తున్నాను.',
+};
 const PROVIDERS: { key: Provider; label: string }[] = [
   { key: 'xnnpack', label: 'CPU (XNNPACK)' },
   { key: 'cpu', label: 'CPU (basic)' },
@@ -58,7 +67,7 @@ export function OfflineScreen() {
     }
   });
   const [provider, setProvider] = useState<Provider>('xnnpack');
-  const [steps, setSteps] = useState(16);
+  const [steps, setSteps] = useState(8);
   const [engineState, setEngineState] = useState<'idle' | 'loading' | 'ready'>('idle');
   const engine = useRef<EdgeEngine | null>(null);
   const engineProvider = useRef<Provider | null>(null);
@@ -130,8 +139,9 @@ export function OfflineScreen() {
     try {
       const eng = await getEngine();
       const data = await loadVoiceData(voice);
-      const { wav, timing } = await eng.speak(data, prepareText(text.trim(), voice.language), {
+      const { wav, timing } = await eng.speak(data, prepareText(spokenText(text.trim(), voice.language), voice.language), {
         steps,
+        guidance: QUALITY.find((q) => q.steps === steps)?.guidance ?? 1,
         onProgress: (done, total) => setProgress({ done, total }),
       });
       const file = saveAudio(encodeWav(wav));
@@ -201,7 +211,11 @@ export function OfflineScreen() {
           </>
         ) : (
           <>
-            <Body>One-time download of about 450 MB. Use Wi-Fi.</Body>
+            <Body>
+              {modelNeedsUpdate()
+                ? 'A faster version of the model is available. Update downloads about 350 MB; your voices are kept.'
+                : 'One-time download of about 450 MB. Use Wi-Fi.'}
+            </Body>
             <Button title="Download offline model" onPress={startDownload} />
           </>
         )}
@@ -267,6 +281,7 @@ export function OfflineScreen() {
                   Use example
                 </Text>
               ) : null}
+              <ReadAs text={text} language={voice.language} onUse={setText} />
               {busy ? (
                 <>
                   <View style={[styles.bar, { backgroundColor: t.line }]}>
@@ -359,7 +374,7 @@ function NewOfflineVoice({
   const [name, setName] = useState('');
   const [language, setLanguage] = useState<LanguageCode>('te');
   const lang = languageByCode(language);
-  const [transcript, setTranscript] = useState(lang?.readAloud ?? '');
+  const [transcript, setTranscript] = useState(OFFLINE_READ[language] ?? lang?.readAloud ?? '');
   const [seconds, setSeconds] = useState(0);
   const [clip, setClip] = useState<Float32Array | null>(null);
   const [consent, setConsent] = useState(false);
@@ -390,7 +405,7 @@ function NewOfflineVoice({
   }, [isStreaming, seconds]);
 
   useEffect(() => {
-    setTranscript(languageByCode(language)?.readAloud ?? '');
+    setTranscript(OFFLINE_READ[language] ?? languageByCode(language)?.readAloud ?? '');
   }, [language]);
 
   async function start() {
@@ -434,7 +449,7 @@ function NewOfflineVoice({
     setError(null);
     try {
       const eng = await getEngine();
-      const data = await eng.makeVoice(clip, transcript);
+      const data = await eng.makeVoice(clip, spokenText(transcript, language));
       onDone(saveVoice(name.trim(), language, data));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -444,7 +459,7 @@ function NewOfflineVoice({
   }
 
   const clipSeconds = clip ? clip.length / SAMPLE_RATE : seconds;
-  const lengthOk = clipSeconds >= 5 && clipSeconds <= 12;
+  const lengthOk = clipSeconds >= 4 && clipSeconds <= 10;
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }} keyboardShouldPersistTaps="handled">
@@ -462,7 +477,7 @@ function NewOfflineVoice({
         </View>
       </Card>
       <Card>
-        <Label>Record 5-12 seconds</Label>
+        <Label>Record 4-8 seconds</Label>
         <Body muted>Read this aloud exactly, in a quiet room:</Body>
         <Field
           label="What you will read (edit if you say something else)"
@@ -482,7 +497,7 @@ function NewOfflineVoice({
         </Pressable>
         {clip && (
           <Notice
-            text={`${clipSeconds.toFixed(1)} s recorded${lengthOk ? ': good length.' : ': aim for 5-12 seconds.'}`}
+            text={`${clipSeconds.toFixed(1)} s recorded${lengthOk ? ': good length.' : ': aim for 4-8 seconds.'}`}
             kind={lengthOk ? 'ok' : 'error'}
           />
         )}

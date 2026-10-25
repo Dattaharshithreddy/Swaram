@@ -29,6 +29,8 @@ export interface SpeakOptions {
   steps?: number;
   cfg?: number;
   sway?: number;
+  /** Share of steps (from the start) that use guidance; the rest cost half. */
+  guidance?: number;
   speed?: number;
   onProgress?: (done: number, total: number) => void;
 }
@@ -49,6 +51,11 @@ export function swaySchedule(steps: number, coef = -1): Float32Array {
     t[i] = coef ? x + coef * (Math.cos((Math.PI / 2) * x) - 1 + x) : x;
   }
   return t;
+}
+
+/** Same rule as edge/swaram_edge/runner.py guided_steps. */
+export function guidedSteps(steps: number, guidance: number): number {
+  return Math.max(1, Math.min(steps, Math.round(steps * guidance)));
 }
 
 /** Same rule as F5-TTS: the reference and the new text read as two sentences. */
@@ -145,7 +152,7 @@ export class EdgeEngine {
   private async speakChunk(
     voice: EdgeVoiceData,
     text: string,
-    opts: { steps: number; cfg: number; sway: number; speed: number },
+    opts: { steps: number; cfg: number; sway: number; guidance: number; speed: number },
     timing: Timing,
     progress: { done: number; total: number },
     refMelUri: string,
@@ -162,6 +169,7 @@ export class EdgeEngine {
       refFrames,
       cfg: opts.cfg,
       seed: Math.floor(Math.random() * 2 ** 31),
+      guided: guidedSteps(opts.steps, opts.guidance),
       progressBase: progress.done,
       progressTotal: progress.total,
     });
@@ -180,7 +188,7 @@ export class EdgeEngine {
   }
 
   async speak(voice: EdgeVoiceData, text: string, options: SpeakOptions = {}) {
-    const opts = { steps: 16, cfg: 2.0, sway: -1.0, speed: 1.0, ...options };
+    const opts = { steps: 16, cfg: 2.0, sway: -1.0, guidance: 1.0, speed: 1.0, ...options };
     const timing: Timing = {
       loadSeconds: this.loadSeconds,
       contextSeconds: 0,

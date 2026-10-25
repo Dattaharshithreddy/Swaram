@@ -35,6 +35,8 @@ class SynthOptions : Record {
   @Field val refFrames: Int = 0
   @Field val cfg: Double = 2.0
   @Field val seed: Double = 0.0
+  /** The first `guided` steps use guidance (2 branches); later steps run 1 branch. */
+  @Field val guided: Int = Int.MAX_VALUE
   @Field val progressBase: Int = 0
   @Field val progressTotal: Int = 0
 }
@@ -112,7 +114,7 @@ class SwaramEdgeModule : Module() {
         releaseSessions()
         val t0 = SystemClock.elapsedRealtime()
         val folder = File(pathOf(dir))
-        for (name in listOf("mel.onnx", "context.onnx", "step.int8.onnx", "vocoder.onnx")) {
+        for (name in listOf("mel.onnx", "context.onnx", "flow.int8.onnx", "vocoder.onnx")) {
           if (!File(folder, name).exists()) throw EdgeException("Missing model file $name. Download the model again.")
         }
         val mem = memoryLine()
@@ -134,8 +136,8 @@ class SwaramEdgeModule : Module() {
           mel = e.createSession(File(folder, "mel.onnx").path, options(false))
           trail("load context.onnx")
           context = e.createSession(File(folder, "context.onnx").path, options(false))
-          trail("load step.int8.onnx")
-          step = e.createSession(File(folder, "step.int8.onnx").path, options(true))
+          trail("load flow.int8.onnx")
+          step = e.createSession(File(folder, "flow.int8.onnx").path, options(true))
           trail("load vocoder.onnx")
           vocoder = e.createSession(File(folder, "vocoder.onnx").path, options(false))
         } catch (t: Throwable) {
@@ -234,24 +236,45 @@ class SwaramEdgeModule : Module() {
     trail("synth context done ${contextMs}ms")
 
     t0 = SystemClock.elapsedRealtime()
+    val guided = opts.guided.coerceIn(1, steps)
+    val cfg = opts.cfg.toFloat()
     ctxResult.use { cr ->
       val ctx = cr[0] as OnnxTensor
-      OnnxTensor.createTensor(e, FloatBuffer.wrap(floatArrayOf(opts.cfg.toFloat())), longArrayOf(1)).use { cfgT ->
-        val v = FloatArray(x.size)
+      // Conditioned branch alone, for the unguided late steps (half the work).
+      val ctxCond: OnnxTensor? = if (guided < steps) {
+        val half = FloatArray(duration * ctx.info.shape[2].toInt())
+        ctx.floatBuffer.get(half)
+        OnnxTensor.createTensor(e, FloatBuffer.wrap(half), longArrayOf(1, duration.toLong(), ctx.info.shape[2]))
+      } else null
+      try {
+        val n = x.size
+        val out = FloatArray(2 * n)
         for (i in 0 until steps) {
-          if (i == 0) trail("synth step 1")
+          if (i == 0) trail("synth step 1 (guided steps: $guided)")
+          val useGuidance = i < guided
           OnnxTensor.createTensor(e, FloatBuffer.wrap(x), frameShape).use { xt ->
             OnnxTensor.createTensor(e, FloatBuffer.wrap(floatArrayOf(ts[i])), longArrayOf(1)).use { tt ->
-              stepSession.run(mapOf("x" to xt, "ctx" to ctx, "t" to tt, "cfg" to cfgT)).use { r ->
-                (r[0] as OnnxTensor).floatBuffer.get(v)
+              val c = if (useGuidance) ctx else ctxCond!!
+              stepSession.run(mapOf("x" to xt, "ctx" to c, "t" to tt)).use { r ->
+                val buf = (r[0] as OnnxTensor).floatBuffer
+                buf.get(out, 0, if (useGuidance) 2 * n else n)
               }
             }
           }
           val dt = ts[i + 1] - ts[i]
-          for (j in x.indices) x[j] += dt * v[j]
+          if (useGuidance) {
+            for (j in 0 until n) {
+              val pred = out[j]
+              x[j] += dt * (pred + (pred - out[n + j]) * cfg)
+            }
+          } else {
+            for (j in 0 until n) x[j] += dt * out[j]
+          }
           if (i == 0) trail("synth step 1 done")
           sendEvent("onProgress", mapOf("done" to opts.progressBase + i + 1, "total" to opts.progressTotal))
         }
+      } finally {
+        ctxCond?.close()
       }
     }
     val stepMs = SystemClock.elapsedRealtime() - t0
