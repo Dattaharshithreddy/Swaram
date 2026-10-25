@@ -405,6 +405,21 @@ class SwaramEdgeModule : Module() {
     }
 
     /** Reduces steady background noise in a float32 file. Returns samples. */
+    /** Joins downloaded pieces into one file (and deletes the pieces). Returns the total bytes. */
+    AsyncFunction("concatFiles") { parts: List<String>, outPath: String, promise: Promise ->
+      off(toolPool, promise) {
+        val out = File(pathOf(outPath))
+        val tmp = File(out.path + ".joining")
+        tmp.outputStream().buffered(1 shl 20).use { os ->
+          for (p in parts) File(pathOf(p)).inputStream().use { it.copyTo(os, 1 shl 20) }
+        }
+        if (out.exists()) out.delete()
+        if (!tmp.renameTo(out)) throw EdgeException("Could not save the joined file")
+        for (p in parts) File(pathOf(p)).delete()
+        out.length().toDouble()
+      }
+    }
+
     AsyncFunction("polish") { inPath: String, outPath: String, promise: Promise ->
       off(toolPool, promise) {
         AudioFx.polish(File(pathOf(inPath)), File(pathOf(outPath))).toDouble()

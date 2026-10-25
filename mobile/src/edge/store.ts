@@ -155,6 +155,8 @@ export function studioInstalled(): boolean {
 
 export function deleteStudio(): void {
   for (const f of [studioFile(), new File(modelDir(), 'studio.json')]) if (f.exists) f.delete();
+  const dir = modelDir();
+  if (dir.exists) for (const e of dir.list()) if (e instanceof File && e.name.startsWith('flow.onnx.part')) e.delete();
 }
 
 export interface StudioDownload {
@@ -173,9 +175,12 @@ async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
   }
 }
 
+const STUDIO_PIECE = 100 * 1024 * 1024;
+
 /**
- * Downloads the Studio quality model. Reports what it's doing (onStatus), stops at once on
- * cancel, and restarts the file if no data arrives for 45 s or the connection drops (4 tries).
+ * Downloads the Studio quality model in 100 MB pieces (HTTP ranges). Each piece is checked
+ * for its exact size and retried on its own, finished pieces survive a cancel or app restart,
+ * and a stalled piece (no data for 45 s) is restarted. Then the pieces are joined.
  */
 export async function downloadStudio(
   onProgress: (bytes: number, total: number) => void,
@@ -184,6 +189,7 @@ export async function downloadStudio(
 ) {
   const dir = modelDir();
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+  if (!SwaramEdge) throw new Error('This app build cannot download Studio quality.');
   onStatus('Connecting…');
   let res: Response;
   try {
@@ -195,51 +201,79 @@ export async function downloadStudio(
   if (!res.ok) throw new Error(res.status === 404 ? 'Studio quality isn’t published yet. Try again later.' : `Could not get Studio quality (HTTP ${res.status}).`);
   const infoText = await res.text();
   const info = JSON.parse(infoText) as { bytes: number };
-  onProgress(0, info.bytes);
-  const target = studioFile();
-  for (let attempt = 1; ; attempt++) {
-    if (control.cancelled) throw new Error('Download cancelled');
-    if (target.exists) target.delete();
-    onStatus(attempt === 1 ? 'Starting the download…' : `Connection dropped, trying again (${attempt} of 4)…`);
-    const task = new DownloadTask(STUDIO_BASE_URL + 'flow.onnx', target);
-    let last = Date.now();
-    let stalled = false;
-    const sub = task.addListener('progress', (p) => {
-      last = Date.now();
-      onStatus('Downloading…');
-      onProgress(p.bytesWritten, info.bytes);
-    });
-    const watchdog = setInterval(() => {
-      if (Date.now() - last > 45000) {
-        stalled = true;
-        task.cancel();
-      }
-    }, 5000);
-    control.cancel = () => {
-      control.cancelled = true;
-      task.cancel();
-    };
-    try {
-      const file = await task.downloadAsync();
+  const total = info.bytes;
+  const pieces = Math.ceil(total / STUDIO_PIECE);
+  const pieceFile = (i: number) => new File(dir, `flow.onnx.part${i}`);
+  const pieceSize = (i: number) => Math.min(STUDIO_PIECE, total - i * STUDIO_PIECE);
+  const doneBytes = () => {
+    let b = 0;
+    for (let i = 0; i < pieces; i++) if (pieceFile(i).exists && pieceFile(i).size === pieceSize(i)) b += pieceSize(i);
+    return b;
+  };
+  onProgress(doneBytes(), total);
+
+  for (let i = 0; i < pieces; i++) {
+    const target = pieceFile(i);
+    const want = pieceSize(i);
+    if (target.exists && target.size === want) continue;
+    for (let attempt = 1; ; attempt++) {
       if (control.cancelled) throw new Error('Download cancelled');
-      if (!file) throw new Error('Download cancelled');
-      break;
-    } catch (e) {
-      if (control.cancelled) {
-        if (target.exists) target.delete();
-        throw new Error('Download cancelled');
+      if (target.exists) target.delete();
+      onStatus(attempt === 1 ? `Downloading part ${i + 1} of ${pieces}…` : `Part ${i + 1}: connection dropped, trying again (${attempt} of 5)…`);
+      const before = doneBytes();
+      const from = i * STUDIO_PIECE;
+      const task = new DownloadTask(STUDIO_BASE_URL + 'flow.onnx', target, { headers: { Range: `bytes=${from}-${from + want - 1}` } });
+      let last = Date.now();
+      let stalled = false;
+      const sub = task.addListener('progress', (p) => {
+        last = Date.now();
+        onProgress(before + Math.min(p.bytesWritten, want), total);
+      });
+      const watchdog = setInterval(() => {
+        if (Date.now() - last > 45000) {
+          stalled = true;
+          task.cancel();
+        }
+      }, 5000);
+      control.cancel = () => {
+        control.cancelled = true;
+        task.cancel();
+      };
+      let ok = false;
+      try {
+        const file = await task.downloadAsync();
+        ok = !!file && target.exists && target.size === want;
+        if (!ok && !control.cancelled && target.exists && target.size !== want) {
+          // e.g. the server sent the whole file instead of this range
+          if (attempt >= 5) throw new Error(`Part ${i + 1} came back as ${target.size} bytes instead of ${want}. Try again later.`);
+        }
+      } catch (e) {
+        if (control.cancelled) {
+          if (target.exists) target.delete();
+          throw new Error('Download cancelled');
+        }
+        if (attempt >= 5 || (!stalled && !isNetworkError(e))) throw e;
+      } finally {
+        clearInterval(watchdog);
+        sub.remove();
+        control.cancel = undefined;
       }
-      if (attempt >= 4 || (!stalled && !isNetworkError(e))) throw e;
-      await new Promise((r) => setTimeout(r, 3000 * attempt));
-    } finally {
-      clearInterval(watchdog);
-      sub.remove();
-      control.cancel = undefined;
+      if (ok) break;
+      if (control.cancelled) throw new Error('Download cancelled');
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
     }
+    onProgress(doneBytes(), total);
   }
-  if (target.size !== info.bytes) {
-    if (target.exists) target.delete();
-    throw new Error('Studio quality did not download completely. Try again on Wi-Fi.');
+
+  onStatus('Putting the parts together…');
+  const out = studioFile();
+  const joined = await SwaramEdge.concatFiles(
+    Array.from({ length: pieces }, (_, i) => pieceFile(i).uri),
+    out.uri,
+  );
+  if (joined !== total || out.size !== total) {
+    if (out.exists) out.delete();
+    throw new Error(`Studio quality came out as ${joined} bytes instead of ${total}. Tap Download to try again.`);
   }
   const infoFile = new File(dir, 'studio.json');
   if (infoFile.exists) infoFile.delete();

@@ -16,7 +16,7 @@ import { EMOTION_STYLE } from './emotions';
 import { writeFloats } from './engine';
 import { importSound } from './sounds';
 import { exportVoice, importVoice } from './voices';
-import { downloadModel, downloadStudio, type StudioDownload, exportForTraining, loadEmotionData, loadVoiceData, saveEmotion, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
+import { deleteStudio, downloadModel, downloadStudio, type StudioDownload, exportForTraining, loadEmotionData, loadVoiceData, saveEmotion, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
 import { prepareText } from './telugu';
 import { spokenText } from '../translit';
 
@@ -85,14 +85,17 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
       const t0 = Date.now();
       const p = downloadStudio((b) => {
         got = b;
-        if (b > 20e6 && !ctl.cancelled) ctl.cancel?.();
+        if (b > 110e6 && !ctl.cancelled) ctl.cancel?.();
       }, ctl);
       const outcome = await Promise.race([
         p.then(() => 'finished', (e) => String(e)),
         new Promise<string>((r) => setTimeout(() => r('timeout'), 180000)),
       ]);
       if (!outcome.includes('cancelled')) throw new Error(`studio download: ${outcome} after ${(got / 1e6).toFixed(0)} MB`);
-      log(`studio download ok: ${(got / 1e6).toFixed(0)} MB then cancelled in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+      const part0 = new File(modelDir(), 'flow.onnx.part0');
+      if (!part0.exists || part0.size !== 100 * 1024 * 1024) throw new Error(`studio part 1 has ${part0.exists ? part0.size : 'no'} bytes`);
+      deleteStudio();
+      log(`studio download ok: ${(got / 1e6).toFixed(0)} MB then part 1 verified, cancelled in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
     }
     const t0 = Date.now();
     const { wav, timing } = await engine.speak(reloaded, prepareText(spokenText('Idi oka pariksha. 25 rupayalu.', 'te'), 'te'), {
