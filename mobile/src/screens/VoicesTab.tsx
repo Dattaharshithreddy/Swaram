@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Alert, Linking, Pressable, Text, View } from 'react-native';
 import { usePlayer } from '../components/player';
 import { Badge, Button, Card, Empty, Header, Icon, Notice, ProgressBar, Screen } from '../components/ui';
-import { forgetTraining, startTraining } from '../edge/kaggleTraining';
+import { expectedHours, forgetTraining, startTraining } from '../edge/kaggleTraining';
+import type { TrainingMode } from '../edge/kaggle';
 import { deletePersonal } from '../edge/personal';
 import { EMOTION_INFO, EMOTIONS } from '../edge/emotions';
 import { deleteVoice, emotionRecording, exportForTraining, hasRecording, recordingFile } from '../edge/store';
@@ -34,7 +35,15 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
   const rec = v.kind === 'f5' && hasRecording(v.voice) ? recordingFile(v.voice).uri : null;
   const avatar = v.kind === 'fast' ? { bg: t.goldBg, fg: t.goldText } : AVATAR[index % AVATAR.length];
 
-  async function makeFast() {
+  function chooseFast() {
+    Alert.alert('How fast should training be?', 'Both are free on Kaggle. You can close the app; the fast voice appears here when it is done.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Best quality · ~3 h', onPress: () => void makeFast('best') },
+      { text: 'Quick · ~1.5 h', onPress: () => void makeFast('quick') },
+    ]);
+  }
+
+  async function makeFast(mode: TrainingMode) {
     if (v.kind !== 'f5') return;
     const c = app.creds;
     if (!c?.username || !c.token || !c.hfToken) {
@@ -47,7 +56,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
     setBusy(true);
     setError(null);
     try {
-      await startTraining(v.voice, c);
+      await startTraining(v.voice, c, mode);
       app.refreshTrainings();
     } catch (e) {
       setError(friendlyError(e));
@@ -99,7 +108,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
 
       {training?.state === 'running' && (
         <View style={{ gap: 6 }}>
-          <ProgressBar value={Math.min(0.97, (Date.now() - training.startedAt) / 3.6e6 / 4)} color={t.gold} />
+          <ProgressBar value={Math.min(0.97, (Date.now() - training.startedAt) / 3.6e6 / expectedHours(training))} color={t.gold} />
           <Notice text={`${training.detail ?? 'Training on Kaggle'}. You can close the app; the fast voice appears here when it's ready.`} />
         </View>
       )}
@@ -193,9 +202,9 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
       {v.kind === 'f5' && rec && !hasFastTwin && training?.state !== 'running' && (
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12, lineHeight: 18 }}>
-            Optional. Your voice already works without this. It trains a copy that speaks in about 1 second instead of about 30. Free, runs about 4 hours on Kaggle (needs a free Kaggle account).
+            Optional. Your voice already works without this. It trains a copy that speaks in about 1 second instead of about 30. Free on Kaggle: Quick takes about 1.5 hours, Best quality about 3 (needs a free Kaggle account).
           </Text>
-          <Button title="Make it fast" icon="zap" kind="gold" small busy={busy} onPress={makeFast} />
+          <Button title="Make it fast" icon="zap" kind="gold" small busy={busy} onPress={chooseFast} />
         </View>
       )}
         </View>

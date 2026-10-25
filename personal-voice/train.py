@@ -28,6 +28,7 @@ def main() -> None:
     p.add_argument("--out", required=True)
     p.add_argument("--hours", type=float, default=2.5)
     p.add_argument("--batch", type=int, default=16)
+    p.add_argument("--devices", type=int, default=1, help="GPUs to train on (2 on Kaggle's T4 x2)")
     p.add_argument("--max-steps", type=int, default=0, help="Tests: stop after this many steps (relative)")
     p.add_argument("--cpu", action="store_true")
     p.add_argument("--no-base", action="store_true", help="Tests: start from scratch")
@@ -50,9 +51,12 @@ def main() -> None:
         "--trainer.default_root_dir", str(out),
         "--trainer.max_time", f"00:{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:00",
         "--trainer.accelerator", "cpu" if args.cpu else "gpu",
-        "--trainer.devices", "1",
+        "--trainer.devices", str(args.devices),
         "--trainer.log_every_n_steps", "10",
     ]
+    if args.devices > 1:
+        # GAN training with manual optimisation: some parameters skip a step.
+        cmd += ["--trainer.strategy", "ddp_find_unused_parameters_true"]
     if not args.no_base:
         ckpt = base_checkpoint()
         cmd += ["--ckpt_path", ckpt]

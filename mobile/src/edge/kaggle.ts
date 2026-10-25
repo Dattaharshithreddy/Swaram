@@ -126,6 +126,10 @@ export async function fetchTemplate(): Promise<{ cells: { cell_type: string; sou
   return res.json();
 }
 
+/** quick: about 1.5 h on Kaggle, a little rougher; best: about 3 h. */
+export type TrainingMode = 'quick' | 'best';
+export const TRAINING_HOURS: Record<TrainingMode, number> = { quick: 1.5, best: 3 };
+
 /** The training notebook with the voice and Hugging Face token filled in (the notebook is private). */
 export function trainingNotebook(
   template: { cells: { cell_type: string; source: string | string[]; metadata?: object }[] },
@@ -138,6 +142,7 @@ export function trainingNotebook(
     emotions?: Record<string, { text: string; wavBase64: string }>;
   },
   hfToken: string,
+  mode: TrainingMode = 'best',
 ) {
   const nb = JSON.parse(JSON.stringify(template));
   const appCell = [
@@ -149,6 +154,7 @@ export function trainingNotebook(
       language: voice.language,
       text: voice.text,
       wav_base64: voice.wavBase64,
+      mode,
       emotions: Object.fromEntries(Object.entries(voice.emotions ?? {}).map(([e, v]) => [e, { text: v.text, wav_base64: v.wavBase64 }])),
     })}`,
   ].join('\n');

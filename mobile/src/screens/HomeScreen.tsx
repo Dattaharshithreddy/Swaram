@@ -10,6 +10,7 @@ import { languageByCode } from '../languages';
 import { useApp } from '../state';
 import { font, radius, space, useTheme } from '../theme';
 import { friendlyError } from '../errors';
+import { expectedHours } from '../edge/kaggleTraining';
 
 export function RecentRow({ item, onRemoved }: { item: RecentItem; onRemoved?: () => void }) {
   const t = useTheme();
@@ -205,9 +206,9 @@ export function HomeScreen() {
               <View key={tr.id} style={{ gap: 6 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                   <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 13 }}>⚡ {tr.voiceName}</Text>
-                  <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12 }}>{hours.toFixed(1)} h of about 4 h</Text>
+                  <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12 }}>{hours.toFixed(1)} h of about {expectedHours(tr)} h</Text>
                 </View>
-                <ProgressBar value={Math.min(0.97, hours / 4)} color={t.gold} />
+                <ProgressBar value={Math.min(0.97, hours / expectedHours(tr))} color={t.gold} />
                 <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12 }}>
                   When it finishes, "⚡ {tr.voiceName}" appears as a new voice. Your normal "{tr.voiceName}" works meanwhile.
                 </Text>

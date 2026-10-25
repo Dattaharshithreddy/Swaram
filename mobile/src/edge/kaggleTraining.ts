@@ -12,6 +12,8 @@ import {
   pushNotebook,
   runOutputs,
   runStatus,
+  TRAINING_HOURS,
+  type TrainingMode,
   trainingNotebook,
 } from './kaggle';
 import { importPersonal } from './personal';
@@ -31,6 +33,13 @@ export interface Training {
   detail?: string;
   personalId?: string;
   checkedAt?: number;
+  /** Expected total hours on Kaggle (older trainings: 4). */
+  hours?: number;
+  mode?: TrainingMode;
+}
+
+export function expectedHours(t: Training): number {
+  return t.hours ?? 4;
 }
 
 export interface Credentials {
@@ -78,7 +87,7 @@ export function forgetTraining(t: Training) {
   saveAll(listTrainings().filter((x) => x.id !== t.id));
 }
 
-export async function startTraining(voice: OfflineVoice, creds: Credentials): Promise<Training> {
+export async function startTraining(voice: OfflineVoice, creds: Credentials, mode: TrainingMode = 'best'): Promise<Training> {
   if (!creds.username || !creds.token || !creds.hfToken) {
     throw new Error('Add your Kaggle username, Kaggle API token and Hugging Face token first.');
   }
@@ -94,6 +103,7 @@ export async function startTraining(voice: OfflineVoice, creds: Credentials): Pr
     template,
     { name: voice.name, language: voice.language, text: voice.text.trim(), wavBase64: bytesToBase64(await wav.bytes()), emotions },
     creds.hfToken,
+    mode,
   );
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const slug = `swaram-voice-${id}`;
@@ -109,6 +119,8 @@ export async function startTraining(voice: OfflineVoice, creds: Credentials): Pr
     startedAt: Date.now(),
     state: 'running',
     detail: 'Starting on Kaggle…',
+    mode,
+    hours: TRAINING_HOURS[mode],
   };
   saveAll([t, ...listTrainings()]);
   return t;
@@ -145,7 +157,7 @@ export async function checkTraining(t: Training, creds: Credentials): Promise<Tr
     next.detail =
       s.state === 'queued'
         ? 'Waiting for a free GPU on Kaggle…'
-        : `Training on Kaggle · ${hours < 1 ? `${Math.round(hours * 60)} min` : `${hours.toFixed(1)} h`} so far (about 4 h in total)`;
+        : `Training on Kaggle · ${hours < 1 ? `${Math.round(hours * 60)} min` : `${hours.toFixed(1)} h`} so far (about ${expectedHours(t)} h in total)`;
   }
   update(next);
   return next;

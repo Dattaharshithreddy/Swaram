@@ -16,15 +16,16 @@ about 20 times faster than real time, offline.
    **+ Add Input → Upload → New Dataset**.
 2. **Settings → Accelerator → GPU T4 x2**, and **Internet → On**.
 3. **Add-ons → Secrets**: a secret named `HF_TOKEN` with your Hugging Face token, switched on for this notebook.
-4. Click **Save Version → Save & Run All (Commit)**. It runs in the background for about 4 hours;
+4. Click **Save Version → Save & Run All (Commit)**. It runs in the background for about 3 hours (MODE = \"quick\": about 1.5);
    you can close the browser.
 
 **After:** open the saved version → **Output** → download `swaram-voice-….zip` (about 60 MB) to your
 phone, then in the app: Offline → **Import personal voice**. Listen to `samples/` first if you like."""),
     ("code", """# Settings (the defaults are fine)
-SENTENCES = 1500      # how much training speech to make (about 1.5-2 hours of audio)
-TRAIN_HOURS = 2.5     # training time; more = a bit better
-STEPS = 32            # quality of the training speech (big model steps)
+MODE = "best"         # "quick" (about 1.5 hours in total) or "best" (about 3 hours)
+SENTENCES = None      # how much training speech to make (None = the mode's amount)
+TRAIN_HOURS = None    # training time (None = the mode's); more = a bit better
+STEPS = None          # quality of the training speech, big model steps (None = the mode's)
 VOICE_NAME = ""       # leave empty to use the name from the app
 REF_TEXT = ""         # only if you uploaded a plain audio file instead of the app's export"""),
     ("code", f"""# 1. Setup (about 5 minutes)
@@ -64,7 +65,8 @@ if "APP_VOICE" in globals():
     for e, v in (APP_VOICE.get("emotions") or {}).items():
         open(f"{WORK}/voice/emo-{e}.wav", "wb").write(base64.b64decode(v["wav_base64"]))
         emos[e] = {"audio": f"emo-{e}.wav", "text": v["text"]}
-    meta = {k: v for k, v in APP_VOICE.items() if k not in ("wav_base64", "emotions")}
+    MODE = APP_VOICE.get("mode") or MODE
+    meta = {k: v for k, v in APP_VOICE.items() if k not in ("wav_base64", "emotions", "mode")}
     json.dump(meta | {"audio": "ref.wav", "emotions": emos}, open(f"{WORK}/voice/voice.json", "w"))
 for z in glob.glob("/kaggle/input/**/*.zip", recursive=True):
     with zipfile.ZipFile(z) as f:
@@ -84,6 +86,11 @@ assert ref_text, "Set REF_TEXT (exactly what is said in the recording) in the se
 name = name or "My voice"
 print("Voice:", name, "|", ref_wav, "|", ref_text)
 print("Emotions:", ", ".join(emotion_refs) or "none (normal tone only)")
+# Both modes train on both GPUs. Quick makes less, slightly rougher training speech and trains for less time.
+PRESETS = {"quick": (700, 16, 0.9), "best": (1500, 32, 2.0)}
+p_sent, p_steps, p_hours = PRESETS.get(MODE, PRESETS["best"])
+SENTENCES, STEPS, TRAIN_HOURS = SENTENCES or p_sent, STEPS or p_steps, TRAIN_HOURS or p_hours
+print(f"Mode: {MODE} | {SENTENCES} sentences, {STEPS} steps, {TRAIN_HOURS} h training")
 """),
     ("code", """# 3. Make the training speech with the big model (about 30-60 minutes on 2 GPUs)
 DATA = f"{WORK}/data"
@@ -108,7 +115,21 @@ sh(f"cd {PV} && python dataset.py {DATA}")
 """),
     ("code", """# 4. Train the small fast model (TRAIN_HOURS)
 TRAIN = f"{WORK}/train"
-sh(f"cd {PV} && python train.py --data {DATA} --piper {WORK}/piper --out {TRAIN} --hours {TRAIN_HOURS} --batch 16 2>&1 | grep -v Warning | tail -n 40")
+import time
+def train(devices, hours):
+    t0 = time.time()
+    rc = subprocess.run(f"set -o pipefail; cd {PV} && python train.py --data {DATA} --piper {WORK}/piper --out {TRAIN} "
+                        f"--hours {hours} --batch 16 --devices {devices} 2>&1 | grep -v Warning | tail -n 40",
+                        shell=True, executable="/bin/bash").returncode
+    return rc, (time.time() - t0) / 3600
+gpus = max(1, torch.cuda.device_count())
+rc, took = train(gpus, TRAIN_HOURS)
+ckpts = glob.glob(f"{TRAIN}/**/*.ckpt", recursive=True)
+if rc != 0 and gpus > 1 and not ckpts:
+    print(f"Training on both GPUs failed after {took * 60:.0f} min; using one GPU instead.")
+    rc, _ = train(1, max(0.5, TRAIN_HOURS - took))
+    ckpts = glob.glob(f"{TRAIN}/**/*.ckpt", recursive=True)
+assert rc == 0 or ckpts, "Training failed: see the log above"
 """),
     ("code", """# 5. Package it for the app
 sh(f"cd {PV} && python package.py --train {TRAIN} --piper {WORK}/piper --name {shlex.quote(name)} --data {DATA} --out {OUT}")
