@@ -72,10 +72,16 @@ jobs:
           mkdir -p $WORK
           cp ../IndicF5/prompts/PAN_F_HAPPY_00001.wav $WORK/ref.wav
           python make_sentences.py $WORK/data 6
+          python emotions.py $WORK/data happy,sad
           set -o pipefail
           python generate.py --ref $WORK/ref.wav \
             --ref-text "ਭਹੰਪੀ ਵਿੱਚ ਸਮਾਰਕਾਂ ਦੇ ਭਵਨ ਨਿਰਮਾਣ ਕਲਾ ਦੇ ਵੇਰਵੇ ਗੁੰਝਲਦਾਰ ਅਤੇ ਹੈਰਾਨ ਕਰਨ ਵਾਲੇ ਹਨ, ਜੋ ਮੈਨੂੰ ਖੁਸ਼ ਕਰਦੇ  ਹਨ।" \
             --out $WORK/data --steps 8 --batch 3
+          for E in happy sad; do
+            python generate.py --ref $WORK/ref.wav \
+              --ref-text "ਭਹੰਪੀ ਵਿੱਚ ਸਮਾਰਕਾਂ ਦੇ ਭਵਨ ਨਿਰਮਾਣ ਕਲਾ ਦੇ ਵੇਰਵੇ ਗੁੰਝਲਦਾਰ ਅਤੇ ਹੈਰਾਨ ਕਰਨ ਵਾਲੇ ਹਨ, ਜੋ ਮੈਨੂੰ ਖੁਸ਼ ਕਰਦੇ  ਹਨ।" \
+              --out $WORK/data --steps 8 --batch 3 --emotion $E
+          done
           python dataset.py $WORK/data | tee $WORK/dataset.txt
           echo "::notice title=Training data::$(cat $WORK/dataset.txt | tr '\n' ' ') emotions.json=$(cat $WORK/data/emotions.json) used=$(cat $WORK/data/emotions_used.json 2>/dev/null) wavs=$(ls $WORK/data/wav | tr '\n' ' ')"
       - name: Fine-tune Piper's Telugu voice for a few steps
