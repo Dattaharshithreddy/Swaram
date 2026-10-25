@@ -28,6 +28,10 @@ jobs:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
-          set -o pipefail
-          node --experimental-strip-types scripts/kaggle-api-test.ts 2>&1 | tee out.txt
-          echo "::notice title=Kaggle API check::$(grep -v Warning out.txt | tail -8 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          set +e
+          node --experimental-strip-types scripts/kaggle-api-test.ts > out.txt 2>&1
+          code=$?
+          cat out.txt
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Kaggle API check::$(grep -v Warning out.txt | tail -15 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
