@@ -16,6 +16,8 @@ import { prepareText } from '../edge/telugu';
 import {
   deleteModel,
   deleteVoice,
+  exportForTraining,
+  hasRecording,
   downloadModel,
   installedBytes,
   listVoices,
@@ -31,7 +33,9 @@ import { LANGUAGES, type LanguageCode, languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
 import { ReadAs } from '../components/ReadAs';
 import { UploadClip } from './UploadClip';
-import { jobRunning, LongScript } from './LongScript';
+import { jobRunning, LongScript, type ScriptVoice } from './LongScript';
+import * as DocumentPicker from 'expo-document-picker';
+import { deletePersonal, FastVoice, importPersonal, listPersonal, type PersonalVoice } from '../edge/personal';
 import { spokenText } from '../translit';
 
 const INDIC = LANGUAGES.filter((l) => l.code !== 'en');
@@ -77,6 +81,10 @@ export function OfflineScreen() {
 
   const [voices, setVoices] = useState<OfflineVoice[]>(() => listVoices());
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [fastVoices, setFastVoices] = useState<PersonalVoice[]>(() => listPersonal());
+  const [fastId, setFastId] = useState<string | null>(null);
+  const fastEngine = useRef<FastVoice | null>(null);
+  const [fastResult, setFastResult] = useState<{ uri: string; audio: number; wall: number } | null>(null);
   const [creating, setCreating] = useState(false);
 
   const [text, setText] = useState('');
@@ -88,8 +96,67 @@ export function OfflineScreen() {
   const player = useAudioPlayer(null);
   const status = useAudioPlayerStatus(player);
 
-  const voice = voices.find((v) => v.id === voiceId) ?? voices[0];
-  const lang = languageByCode(voice?.language);
+  const fastVoice = fastId ? fastVoices.find((v) => v.id === fastId) : undefined;
+  const voice = fastVoice ? undefined : (voices.find((v) => v.id === voiceId) ?? voices[0]);
+  const fastSelected = fastVoice ?? (voices.length === 0 ? fastVoices[0] : undefined);
+  const target: ScriptVoice | undefined = fastSelected
+    ? { kind: 'fast', voice: fastSelected }
+    : voice
+      ? { kind: 'f5', voice }
+      : undefined;
+  const lang = languageByCode(target?.voice.language);
+
+  const getFast = useCallback(async (v: PersonalVoice) => {
+    if (fastEngine.current?.voice.id === v.id) return fastEngine.current;
+    fastEngine.current = await FastVoice.load(v);
+    return fastEngine.current;
+  }, []);
+
+  async function importFast() {
+    setError(null);
+    const res = await DocumentPicker.getDocumentAsync({ type: ['application/zip', 'application/octet-stream', '*/*'], copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    try {
+      const v = await importPersonal(res.assets[0].uri);
+      setFastVoices(listPersonal());
+      setFastId(v.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function exportVoice(v: OfflineVoice) {
+    setError(null);
+    try {
+      const uri = await exportForTraining(v);
+      await Sharing.shareAsync(uri, { mimeType: 'application/zip', dialogTitle: 'Save or upload for Kaggle' });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function generateFast(v: PersonalVoice) {
+    setBusy(true);
+    setError(null);
+    setFastResult(null);
+    try {
+      const fast = await getFast(v);
+      const { wav, seconds } = await fast.speak(
+        prepareText(spokenText(text.trim(), v.language), v.language),
+        (done, total) => setProgress({ done, total }),
+      );
+      const file = saveAudio(encodeWav(wav));
+      setFastResult({ uri: file.uri, audio: wav.length / SAMPLE_RATE, wall: seconds });
+      await setAudioModeAsync({ playsInSilentMode: true });
+      player.replace({ uri: file.uri });
+      player.play();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
+  }
 
   // Free the model's memory when leaving the tab, unless a long script is still generating.
   useEffect(
@@ -138,7 +205,9 @@ export function OfflineScreen() {
   }
 
   async function generate() {
-    if (!voice || !text.trim()) return;
+    if (!text.trim()) return;
+    if (fastSelected) return generateFast(fastSelected);
+    if (!voice) return;
     setBusy(true);
     setError(null);
     setResult(null);
@@ -229,8 +298,9 @@ export function OfflineScreen() {
         )}
       </Card>
 
-      {installed && (
+      {(installed || fastVoices.length > 0) && (
         <>
+          {installed && (
           <Card>
             <Label>Speed settings</Label>
             <Body muted>Fewer steps are faster but rougher. Try Fast first to see your phone's speed.</Body>
@@ -246,35 +316,58 @@ export function OfflineScreen() {
             </View>
             {engineState === 'loading' && <Notice text="Loading the model into memory…" />}
           </Card>
+          )}
 
           <Card>
             <Label>Offline voices</Label>
-            {voices.length === 0 ? (
+            {voices.length === 0 && fastVoices.length === 0 ? (
               <Body muted>No offline voices yet.</Body>
             ) : (
               <View style={styles.wrap}>
                 {voices.map((v) => (
-                  <Chip key={v.id} label={v.name} selected={v.id === voice?.id} onPress={() => setVoiceId(v.id)} />
+                  <Chip
+                    key={v.id}
+                    label={v.name}
+                    selected={!fastSelected && v.id === voice?.id}
+                    onPress={() => {
+                      setFastId(null);
+                      setVoiceId(v.id);
+                    }}
+                  />
+                ))}
+                {fastVoices.map((v) => (
+                  <Chip key={v.id} label={`⚡ ${v.name}`} selected={fastSelected?.id === v.id} onPress={() => setFastId(v.id)} />
                 ))}
               </View>
             )}
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Button title="+ New offline voice" onPress={() => setCreating(true)} style={{ flex: 1 }} />
-              {voice && (
+            {fastSelected && <Notice text="⚡ Personal fast voice: a sentence takes about a second." kind="ok" />}
+            <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+              {installed && <Button title="+ New offline voice" onPress={() => setCreating(true)} style={{ flex: 1 }} />}
+              {target && (
                 <Button
                   title="Delete"
                   kind="secondary"
                   onPress={() => {
-                    deleteVoice(voice);
-                    setVoices(listVoices());
-                    setVoiceId(null);
+                    if (target.kind === 'fast') {
+                      deletePersonal(target.voice);
+                      setFastVoices(listPersonal());
+                      setFastId(null);
+                    } else {
+                      deleteVoice(target.voice);
+                      setVoices(listVoices());
+                      setVoiceId(null);
+                    }
                   }}
                 />
               )}
             </View>
+            {voice && !fastSelected && hasRecording(voice) && (
+              <Button title="Export for training (personal fast voice)" kind="secondary" onPress={() => exportVoice(voice)} />
+            )}
+            <Button title="Import personal voice (.zip)" kind="secondary" onPress={importFast} />
           </Card>
 
-          {voice && (
+          {target && (
             <Card>
               <Field
                 label={`Text${lang ? ` in ${lang.name}` : ''}`}
@@ -289,7 +382,7 @@ export function OfflineScreen() {
                   Use example
                 </Text>
               ) : null}
-              <ReadAs text={text} language={voice.language} onUse={setText} />
+              <ReadAs text={text} language={target.voice.language} onUse={setText} />
               {busy ? (
                 <>
                   <View style={[styles.bar, { backgroundColor: t.line }]}>
@@ -308,7 +401,9 @@ export function OfflineScreen() {
                       engineState === 'loading'
                         ? 'Loading the model…'
                         : progress
-                          ? `Step ${progress.done} of ${progress.total}`
+                          ? fastSelected
+                            ? `Part ${progress.done} of ${progress.total}`
+                            : `Step ${progress.done} of ${progress.total}`
                           : 'Preparing…'
                     }
                   />
@@ -316,8 +411,18 @@ export function OfflineScreen() {
               ) : (
                 <Button title="Generate on this phone" onPress={generate} disabled={!text.trim()} />
               )}
-              {result && <SpeedReport result={result} />}
-              {result && (
+              {!fastSelected && result && <SpeedReport result={result} />}
+              {fastSelected && fastResult && (
+                <View style={[styles.report, { backgroundColor: t.tint }]}>
+                  <Text style={{ color: t.ink, fontWeight: '800', fontSize: 16 }}>
+                    {fastResult.audio.toFixed(1)} s of audio in {fastResult.wall.toFixed(1)} s
+                  </Text>
+                  <Text style={{ color: t.ok }}>
+                    {(fastResult.audio / Math.max(fastResult.wall, 1e-3)).toFixed(1)}× faster than real time
+                  </Text>
+                </View>
+              )}
+              {(fastSelected ? fastResult : result) && (
                 <View style={{ flexDirection: 'row', gap: space.sm }}>
                   <Button
                     title={status.playing ? 'Pause' : 'Play'}
@@ -335,16 +440,20 @@ export function OfflineScreen() {
                     title="Share"
                     kind="secondary"
                     style={{ flex: 1 }}
-                    onPress={() => void Sharing.shareAsync(result.uri, { dialogTitle: 'Share audio' })}
+                    onPress={() => {
+                      const uri = fastSelected ? fastResult?.uri : result?.uri;
+                      if (uri) void Sharing.shareAsync(uri, { dialogTitle: 'Share audio' });
+                    }}
                   />
                 </View>
               )}
             </Card>
           )}
-          {voice && (
+          {target && (
             <LongScript
               getEngine={getEngine}
-              voice={voice}
+              getFast={getFast}
+              target={target}
               steps={steps}
               guidance={QUALITY.find((q) => q.steps === steps)?.guidance ?? 1}
             />
@@ -476,7 +585,7 @@ function NewOfflineVoice({
     try {
       const eng = await getEngine();
       const data = await eng.makeVoice(clip, spokenText(transcript, language));
-      onDone(saveVoice(name.trim(), language, data));
+      onDone(saveVoice(name.trim(), language, data, clip));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

@@ -37,6 +37,11 @@ export interface SwaramEdgeNative {
   updateBackground(title: string, text: string, done: number, total: number): void;
   stopBackground(): void;
   requestNotifications(): void;
+  /** Personal fast voice (Piper/VITS ONNX). */
+  piperLoad(modelPath: string, threads: number): Promise<number>;
+  piperSynth(ids: number[], noiseScale: number, lengthScale: number, noiseW: number, outPath: string): Promise<number>;
+  unzip(zipPath: string, destDir: string): Promise<string[]>;
+  zip(paths: string[], names: string[], outPath: string): Promise<void>;
   /** How the app last ended, if that was a crash (shown once); otherwise null. */
   crashReport(): string | null;
   addListener(event: 'onProgress', listener: (e: { done: number; total: number }) => void): { remove(): void };

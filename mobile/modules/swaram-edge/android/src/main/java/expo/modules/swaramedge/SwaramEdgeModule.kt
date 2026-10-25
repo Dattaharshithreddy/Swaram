@@ -67,6 +67,10 @@ class SwaramEdgeModule : Module() {
   private var step: OrtSession? = null
   private var vocoder: OrtSession? = null
   private val lock = Any()
+  // Personal fast voice (Piper/VITS): its own session and lock.
+  private var piper: OrtSession? = null
+  private var piperPath: String? = null
+  private val piperLock = Any()
 
   private val appCtx: Context
     get() = appContext.reactContext?.applicationContext ?: throw EdgeException("No Android context")
@@ -205,6 +209,95 @@ class SwaramEdgeModule : Module() {
       }
     }
 
+    /** Loads a personal voice model (once per path). Returns load time in ms. */
+    AsyncFunction("piperLoad") { modelPath: String, threads: Int ->
+      synchronized(piperLock) {
+        val path = pathOf(modelPath)
+        if (piper != null && piperPath == path) return@synchronized 0.0
+        runCatching { piper?.close() }
+        piper = null
+        val t0 = SystemClock.elapsedRealtime()
+        trail("piper load $path")
+        try {
+          val e = env ?: OrtEnvironment.getEnvironment().also { env = it }
+          val opts = OrtSession.SessionOptions().apply {
+            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.EXTENDED_OPT)
+            setIntraOpNumThreads(threads)
+          }
+          piper = e.createSession(path, opts)
+          piperPath = path
+        } catch (t: Throwable) {
+          trail("piper load failed: $t")
+          throw EdgeException("Could not load the personal voice: ${t.message}", t)
+        }
+        (SystemClock.elapsedRealtime() - t0).toDouble()
+      }
+    }
+
+    /** Phoneme ids -> float32 audio at the model's rate in outPath. Returns samples. */
+    AsyncFunction("piperSynth") { ids: List<Int>, noiseScale: Double, lengthScale: Double, noiseW: Double, outPath: String ->
+      synchronized(piperLock) {
+        val session = piper ?: throw EdgeException("Personal voice not loaded")
+        val e = env ?: throw EdgeException("Personal voice not loaded")
+        try {
+          val idArr = LongArray(ids.size) { ids[it].toLong() }
+          val wav = OnnxTensor.createTensor(e, LongBuffer.wrap(idArr), longArrayOf(1, idArr.size.toLong())).use { input ->
+            OnnxTensor.createTensor(e, LongBuffer.wrap(longArrayOf(idArr.size.toLong())), longArrayOf(1)).use { lens ->
+              OnnxTensor.createTensor(
+                e, FloatBuffer.wrap(floatArrayOf(noiseScale.toFloat(), lengthScale.toFloat(), noiseW.toFloat())), longArrayOf(3),
+              ).use { scales ->
+                session.run(mapOf("input" to input, "input_lengths" to lens, "scales" to scales)).use { r ->
+                  val t = r[0] as OnnxTensor
+                  val n = t.info.shape.last().toInt()
+                  val out = FloatArray(n)
+                  t.floatBuffer.get(out)
+                  out
+                }
+              }
+            }
+          }
+          writeFloatFile(outPath, wav)
+          wav.size
+        } catch (t: Throwable) {
+          trail("piper synth failed: $t")
+          throw EdgeException("Personal voice failed: ${t.message}", t)
+        }
+      }
+    }
+
+    /** Extracts a zip into destDir. Returns the file names. */
+    AsyncFunction("unzip") { zipPath: String, destDir: String ->
+      val dest = File(pathOf(destDir)).apply { mkdirs() }
+      val names = mutableListOf<String>()
+      java.util.zip.ZipInputStream(File(pathOf(zipPath)).inputStream().buffered()).use { zin ->
+        while (true) {
+          val entry = zin.nextEntry ?: break
+          val target = File(dest, entry.name)
+          if (!target.canonicalPath.startsWith(dest.canonicalPath + File.separator)) {
+            throw EdgeException("Unsafe file name in zip: ${entry.name}")
+          }
+          if (entry.isDirectory) target.mkdirs() else {
+            target.parentFile?.mkdirs()
+            target.outputStream().use { zin.copyTo(it) }
+            names.add(entry.name)
+          }
+        }
+      }
+      names
+    }
+
+    /** Writes files (paths) into a zip under the given names. */
+    AsyncFunction("zip") { paths: List<String>, names: List<String>, outPath: String ->
+      java.util.zip.ZipOutputStream(File(pathOf(outPath)).outputStream().buffered()).use { zout ->
+        for ((i, path) in paths.withIndex()) {
+          zout.putNextEntry(java.util.zip.ZipEntry(names[i]))
+          File(pathOf(path)).inputStream().use { it.copyTo(zout) }
+          zout.closeEntry()
+        }
+      }
+      Unit
+    }
+
     /** Any audio file Android can play -> mono float32 at 24 kHz in outPath. Returns samples. */
     AsyncFunction("decodeAudio") { src: String, outPath: String, maxSeconds: Double ->
       try {
@@ -256,6 +349,7 @@ class SwaramEdgeModule : Module() {
 
     OnDestroy {
       synchronized(lock) { releaseSessions() }
+      releasePiper()
     }
   }
 
@@ -444,6 +538,14 @@ class SwaramEdgeModule : Module() {
       }
     }
     return out.toString()
+  }
+
+  private fun releasePiper() {
+    synchronized(piperLock) {
+      runCatching { piper?.close() }
+      piper = null
+      piperPath = null
+    }
   }
 
   private fun releaseSessions() {

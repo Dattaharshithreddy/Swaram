@@ -6,9 +6,13 @@ import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { Body, Button, Card, Field, Label, Notice } from '../components/ui';
 import type { EdgeEngine } from '../edge/engine';
+import { type FastVoice, listPersonal, type PersonalVoice } from '../edge/personal';
 import {
+  createFastJob,
   createJob,
   deleteJob,
+  f5Maker,
+  fastMaker,
   type JobProgress,
   listJobs,
   outputFile,
@@ -50,17 +54,22 @@ function minutes(sec: number) {
   return `${(sec / 3600).toFixed(1)} h`;
 }
 
+export type ScriptVoice = { kind: 'f5'; voice: OfflineVoice } | { kind: 'fast'; voice: PersonalVoice };
+
 export function LongScript({
   getEngine,
-  voice,
+  getFast,
+  target,
   steps,
   guidance,
 }: {
   getEngine: () => Promise<EdgeEngine>;
-  voice: OfflineVoice | undefined;
+  getFast: (v: PersonalVoice) => Promise<FastVoice>;
+  target: ScriptVoice | undefined;
   steps: number;
   guidance: number;
 }) {
+  const voice = target?.voice;
   const t = useTheme();
   const run = useRunning();
   const [script, setScript] = useState('');
@@ -87,8 +96,9 @@ export function LongScript({
 
   async function execute(job: ScriptJob) {
     if (running) return;
-    const v = listVoices().find((x) => x.id === job.voiceId);
-    if (!v) {
+    const fastVoice = job.kind === 'fast' ? listPersonal().find((x) => x.id === job.voiceId) : undefined;
+    const v = job.kind === 'fast' ? undefined : listVoices().find((x) => x.id === job.voiceId);
+    if (!fastVoice && !v) {
       setError(`The voice "${job.voiceName}" was deleted, so this script can't continue.`);
       return;
     }
@@ -96,12 +106,12 @@ export function LongScript({
     notify();
     setError(null);
     try {
-      const eng = await getEngine();
-      const data = await loadVoiceData(v);
+      const maker = fastVoice
+        ? fastMaker(await getFast(fastVoice))
+        : f5Maker(await getEngine(), await loadVoiceData(v as OfflineVoice), job);
       await runJob(
         job,
-        eng,
-        data,
+        maker,
         (p) => {
           if (running) running.progress = p;
           notify();
@@ -118,14 +128,15 @@ export function LongScript({
   }
 
   async function start() {
-    if (!voice || !script.trim()) return;
+    if (!target || !script.trim()) return;
     setStarting(true);
     setError(null);
     try {
-      const eng = await getEngine();
-      const data = await loadVoiceData(voice);
-      const text = prepareText(spokenText(script.trim(), voice.language), voice.language);
-      const job = createJob(eng, voice, data, text, { steps, guidance });
+      const text = prepareText(spokenText(script.trim(), target.voice.language), target.voice.language);
+      const job =
+        target.kind === 'fast'
+          ? createFastJob(await getFast(target.voice), target.voice, text)
+          : createJob(await getEngine(), target.voice, await loadVoiceData(target.voice), text, { steps, guidance });
       setScript('');
       refresh();
       setStarting(false);

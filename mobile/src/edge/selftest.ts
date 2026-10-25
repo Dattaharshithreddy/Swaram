@@ -9,10 +9,13 @@ import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav, SAMPLE_RATE } from './dsp';
 import { EdgeEngine, type Provider } from './engine';
 import { File, Paths } from 'expo-file-system';
-import { createJob, outputFile, partsDone, runJob } from './jobs';
-import { downloadModel, loadVoiceData, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
+import { createFastJob, createJob, f5Maker, fastMaker, outputFile, partsDone, runJob } from './jobs';
+import { deletePersonal, FastVoice, importPersonal } from './personal';
+import { downloadModel, exportForTraining, loadVoiceData, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
 import { prepareText } from './telugu';
 import { spokenText } from '../translit';
+
+const TEST_PACK_URL = 'https://github.com/Dattaharshithreddy/Swaram/releases/download/personal-voice-test/swaram-voice-CI-test.zip';
 
 function log(msg: string) {
   console.log(`SWARAM_SELFTEST ${msg}`);
@@ -60,7 +63,8 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
 
     const data = await engine.makeVoice(testClip(6), 'నమస్కారం, ఈ రోజు వాతావరణం చాలా బాగుంది.');
     log(`voice made frames=${data.frames}`);
-    const saved = saveVoice('Self test', 'te', data);
+    const clip = testClip(6);
+    const saved = saveVoice('Self test', 'te', data, clip);
     const reloaded = await loadVoiceData(saved);
     log(`voice saved and reloaded frames=${reloaded.frames}`);
 
@@ -102,15 +106,34 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     log(`job parts=${job.parts.length}`);
     if (job.parts.length < 2) throw new Error('script did not split into parts');
     let stopNow = false;
-    const first = await runJob(job, engine, reloaded, (p) => {
+    const first = await runJob(job, f5Maker(engine, reloaded, job), (p) => {
       if (p.partsDone >= 1) stopNow = true;
     }, () => stopNow);
     log(`job stopped=${!first} done=${partsDone(job)}`);
-    const finished = await runJob(job, engine, reloaded, () => {}, () => false);
+    const finished = await runJob(job, f5Maker(engine, reloaded, job), () => {}, () => false);
     const out = outputFile(job);
     log(`job finished=${finished} wav=${out.exists ? out.size : 0} bytes audio=${job.audioSeconds.toFixed(1)}s`);
     if (!finished || !out.exists || (out.size ?? 0) < 44 + 2 * SAMPLE_RATE) throw new Error('job output missing');
-    log('OK all checks passed (speak, upload decode, long script resume + join)');
+    // Export for training (zip of the recording + its words).
+    const exported = await exportForTraining(saved);
+    log(`export for training ${new File(exported).size} bytes`);
+
+    // Personal fast voice: CI's test pack (noise, but the same format and model shape).
+    const pack = new File(Paths.cache, 'selftest-voice.zip');
+    if (pack.exists) pack.delete();
+    await File.downloadFileAsync(TEST_PACK_URL, pack);
+    const pv = await importPersonal(pack.uri);
+    const fast = await FastVoice.load(pv);
+    const fastOut = await fast.speak(prepareText('ఈ రోజు వాతావరణం చాలా బాగుంది. మనం బయటికి వెళ్దాం.', 'te'));
+    log(`fast voice audio=${(fastOut.wav.length / SAMPLE_RATE).toFixed(2)}s in ${fastOut.seconds.toFixed(2)}s load=${fast.loadSeconds.toFixed(2)}s`);
+    if (fastOut.wav.length < SAMPLE_RATE / 2 || !fastOut.wav.every(Number.isFinite)) throw new Error('fast voice output bad');
+    const fastJob = createFastJob(fast, pv, script);
+    const fastDone = await runJob(fastJob, fastMaker(fast), () => {}, () => false);
+    log(`fast long script finished=${fastDone} parts=${fastJob.parts.length} audio=${fastJob.audioSeconds.toFixed(1)}s compute=${fastJob.computeSeconds.toFixed(1)}s`);
+    if (!fastDone || !outputFile(fastJob).exists) throw new Error('fast job output missing');
+    deletePersonal(pv);
+
+    log('OK all checks passed (speak, upload decode, long script resume + join, export, personal fast voice)');
     await engine.release();
   } catch (e) {
     log(`FAIL ${e instanceof Error ? `${e.message} ${e.stack ?? ''}` : String(e)}`.replace(/\n/g, ' | '));

@@ -1,5 +1,7 @@
 /** Offline model download and offline voices, kept in the app's document folder. */
 import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
+import { SwaramEdge } from '../../modules/swaram-edge';
+import { encodeWav } from './dsp';
 import type { EdgeVoiceData } from './engine';
 
 export const MODEL_BASE_URL = 'https://github.com/Dattaharshithreddy/Swaram/releases/download/edge-model/';
@@ -141,7 +143,7 @@ export function listVoices(): OfflineVoice[] {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export function saveVoice(name: string, language: string, data: EdgeVoiceData): OfflineVoice {
+export function saveVoice(name: string, language: string, data: EdgeVoiceData, clip?: Float32Array): OfflineVoice {
   const dir = voicesDir();
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const meta: OfflineVoice = {
@@ -155,6 +157,8 @@ export function saveVoice(name: string, language: string, data: EdgeVoiceData): 
   };
   new File(dir, `${id}.mel`).writeSync(new Uint8Array(data.mel.buffer, data.mel.byteOffset, data.mel.byteLength));
   new File(dir, `${id}.json`).writeSync(JSON.stringify(meta));
+  // The recording itself, for training a personal fast voice later.
+  if (clip) new File(dir, `${id}.wav`).writeSync(encodeWav(clip));
   return meta;
 }
 
@@ -164,9 +168,27 @@ export async function loadVoiceData(v: OfflineVoice): Promise<EdgeVoiceData> {
   return { mel, frames: v.frames, text: v.text, rms: v.rms };
 }
 
+export function hasRecording(v: OfflineVoice): boolean {
+  return new File(voicesDir(), `${v.id}.wav`).exists;
+}
+
+/** A zip with the recording and its words, to upload to the Kaggle notebook. Returns its uri. */
+export async function exportForTraining(v: OfflineVoice): Promise<string> {
+  const edge = SwaramEdge;
+  if (!edge) throw new Error('This app build has no offline engine.');
+  const meta = new File(Paths.cache, 'voice.json');
+  if (meta.exists) meta.delete();
+  meta.writeSync(JSON.stringify({ name: v.name, language: v.language, text: v.text.trim(), audio: 'ref.wav' }));
+  const safe = v.name.replace(/[^A-Za-z0-9\u0C00-\u0C7F]+/g, '-').replace(/^-+|-+$/g, '') || 'voice';
+  const out = new File(Paths.cache, `swaram-training-${safe}.zip`);
+  if (out.exists) out.delete();
+  await edge.zip([new File(voicesDir(), `${v.id}.wav`).uri, meta.uri], ['ref.wav', 'voice.json'], out.uri);
+  return out.uri;
+}
+
 export function deleteVoice(v: OfflineVoice): void {
   const dir = voicesDir();
-  for (const ext of ['json', 'mel']) {
+  for (const ext of ['json', 'mel', 'wav']) {
     const f = new File(dir, `${v.id}.${ext}`);
     if (f.exists) f.delete();
   }

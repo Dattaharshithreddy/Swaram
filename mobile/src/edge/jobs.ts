@@ -9,10 +9,27 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { SAMPLE_RATE } from './dsp';
 import { type EdgeEngine, type EdgeVoiceData, writeFloats } from './engine';
+import type { FastVoice, PersonalVoice } from './personal';
 import type { OfflineVoice } from './store';
+
+/** Makes one part's audio (24 kHz); progress.done/total count steps for the bar. */
+export type PartMaker = (text: string, progress: { done: number; total: number }) => Promise<Float32Array>;
+
+export function f5Maker(engine: EdgeEngine, data: EdgeVoiceData, job: ScriptJob): PartMaker {
+  const refMel = engine.refMelFile(data);
+  const timing = engine.newTiming(job.steps);
+  return (text, progress) =>
+    engine.speakChunk(data, text, { steps: job.steps, cfg: 2.0, sway: -1.0, guidance: job.guidance, speed: 1.0 }, timing, progress, refMel);
+}
+
+export function fastMaker(fast: FastVoice): PartMaker {
+  return (text) => fast.speakPart(text);
+}
 
 export interface ScriptJob {
   id: string;
+  /** 'fast': a personal fast voice; otherwise the big model with an offline voice. */
+  kind?: 'f5' | 'fast';
   title: string;
   voiceId: string;
   voiceName: string;
@@ -110,14 +127,36 @@ export function createJob(
   return job;
 }
 
+/** A long script in a personal fast voice. text must already be prepared. */
+export function createFastJob(fast: FastVoice, voice: PersonalVoice, text: string): ScriptJob {
+  const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const firstLine = text.trim().split(/\s+/).slice(0, 8).join(' ');
+  const job: ScriptJob = {
+    id,
+    kind: 'fast',
+    title: firstLine.length < text.trim().length ? `${firstLine}…` : firstLine,
+    voiceId: voice.id,
+    voiceName: voice.name,
+    language: voice.language,
+    steps: 1,
+    guidance: 1,
+    parts: fast.chunks(text),
+    createdAt: Date.now(),
+    computeSeconds: 0,
+    audioSeconds: 0,
+  };
+  jobDir(id).create({ intermediates: true, idempotent: true });
+  save(job);
+  return job;
+}
+
 /**
  * Generates the missing parts, then joins them. Returns true when the job
  * finished, false when stopped (it can be resumed later).
  */
 export async function runJob(
   job: ScriptJob,
-  engine: EdgeEngine,
-  data: EdgeVoiceData,
+  makePart: PartMaker,
   onProgress: (p: JobProgress) => void,
   shouldStop: () => boolean,
 ): Promise<boolean> {
@@ -140,22 +179,13 @@ export async function runJob(
   edge.startBackground(title, `Part ${Math.min(done + 1, total)} of ${total}`);
   report();
   try {
-    const refMel = engine.refMelFile(data);
-    const timing = engine.newTiming(job.steps);
     for (let i = 0; i < total; i++) {
       if (partFile(job, i).exists) continue;
       if (shouldStop()) return false;
       edge.updateBackground(title, `Part ${i + 1} of ${total}`, done, total);
       const t0 = Date.now();
       progress.done = i * job.steps;
-      const wav = await engine.speakChunk(
-        data,
-        job.parts[i],
-        { steps: job.steps, cfg: 2.0, sway: -1.0, guidance: job.guidance, speed: 1.0 },
-        timing,
-        progress,
-        refMel,
-      );
+      const wav = await makePart(job.parts[i], progress);
       // Write under a temporary name first, so a crash never leaves a half part.
       const tmp = new File(jobDir(job.id), `part-${i}.tmp`);
       if (tmp.exists) tmp.delete();
