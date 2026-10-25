@@ -23,6 +23,22 @@ const AVATAR = [
   { bg: '#231B33', fg: '#C3A6FF' },
 ];
 
+function UpgradeRow({ icon, title, state, last }: { icon: 'zap' | 'award'; title: string; state: { kind: 'ok' | 'busy' | 'bad' | 'none'; text: string }; last?: boolean }) {
+  const t = useTheme();
+  const color = state.kind === 'ok' ? t.ok : state.kind === 'busy' ? t.gold : state.kind === 'bad' ? t.danger : t.faint;
+  const mark = state.kind === 'ok' ? 'check-circle' : state.kind === 'busy' ? 'loader' : state.kind === 'bad' ? 'alert-triangle' : 'circle';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: last ? 0 : 1, borderBottomColor: t.line }}>
+      <Icon name={mark} size={16} color={color} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 13 }}>{title}</Text>
+        <Text style={{ color: state.kind === 'none' ? t.soft : color, fontFamily: font.regular, fontSize: 12 }}>{state.text}</Text>
+      </View>
+      {icon === 'zap' ? null : null}
+    </View>
+  );
+}
+
 function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
   const t = useTheme();
   const app = useApp();
@@ -112,6 +128,39 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
           {v.kind === 'fast' ? 'Ready to use. Speaks in about a second, offline.' : 'Ready to use. Free and works offline. Takes about 30 s per line.'}
         </Text>
       </View>
+      {v.kind === 'f5' && (
+        <View style={{ borderRadius: 12, borderWidth: 1, borderColor: t.line, overflow: 'hidden' }}>
+          <UpgradeRow
+            icon="zap"
+            title="⚡ Fast version"
+            state={
+              hasFastTwin
+                ? { kind: 'ok', text: `Ready: use "⚡ ${v.voice.name}" in your voices` }
+                : training?.state === 'running'
+                  ? { kind: 'busy', text: training.detail ?? 'Training on Kaggle…' }
+                  : training?.state === 'failed'
+                    ? { kind: 'bad', text: 'Training failed: try again in Optional extras' }
+                    : { kind: 'none', text: 'Not made (optional)' }
+            }
+          />
+          <UpgradeRow
+            icon="award"
+            title="Studio voice"
+            last
+            state={
+              studio?.state === 'done'
+                ? { kind: 'ok', text: 'Ready: Studio render on Kaggle uses it' }
+                : studio?.state === 'running'
+                  ? { kind: 'busy', text: studio.detail ?? 'Training on Kaggle…' }
+                  : studio?.state === 'failed'
+                    ? { kind: 'bad', text: 'Training failed: open Optional extras' }
+                    : pro && pro.done > 0
+                      ? { kind: 'none', text: `Recorded ${pro.minutes.toFixed(1)} of ~12 min` }
+                      : { kind: 'none', text: 'Not made (optional)' }
+            }
+          />
+        </View>
+      )}
 
       {training?.state === 'running' && (
         <View style={{ gap: 6 }}>

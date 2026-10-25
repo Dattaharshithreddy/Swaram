@@ -27,6 +27,9 @@ for (const k of data.kernels ?? []) {
     const out = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
     const lines = (out.log ?? '').split('\n').filter((l) => /Error|Traceback|error:|No module|assert|Killed|CUDA|exit status/i.test(l) && !/NbConvert|Warning/.test(l));
     files = `errors: ${lines.slice(-12).join(' // ').slice(0, 1500)}`;
+    const all = (out.log ?? '').split('\n').map((l) => { try { return (JSON.parse(l.replace(/^,/, '')) as { data: string }).data.trimEnd(); } catch { return ''; } }).filter(Boolean);
+    const at = all.findIndex((l) => l.includes('IndexError') || l.includes('Error:'));
+    if (at >= 0) console.log(`--- ${slug} context ---\n${all.slice(Math.max(0, at - 45), at + 3).join('\n')}`);
   }
   if (s.state === 'complete') {
     const out = await runOutputs(auth, slug).catch(() => ({ files: [] as { fileName: string }[] }));

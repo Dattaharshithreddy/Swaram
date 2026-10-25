@@ -4,6 +4,7 @@
  * Screens read it with useApp().
  */
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import { SwaramEdge } from '../modules/swaram-edge';
 import { crossFade, encodeWav, SAMPLE_RATE } from './edge/dsp';
 import { chunkText, chunksFor, EdgeEngine } from './edge/engine';
@@ -348,7 +349,17 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
       for (const tr of listTrainings().filter((x) => x.state === 'running')) {
         try {
           const next = await checkTraining(tr, c);
-          if (next.state === 'done') imported = true;
+          if (next.state === 'done') {
+            imported = true;
+            Alert.alert(
+              next.kind === 'big' ? 'Studio voice ready' : 'Fast voice ready',
+              next.kind === 'big'
+                ? `"${next.voiceName}" now has a studio voice. Studio → open a project → Studio render on Kaggle uses it.`
+                : `"⚡ ${next.voiceName}" is in your voices. It speaks in about a second, offline.`,
+            );
+          } else if (next.state === 'failed') {
+            Alert.alert('Training failed', `${next.voiceName}: ${next.detail ?? 'see the notebook on Kaggle.'}`);
+          }
         } catch {
           // Shown on the next check; network may be down.
         }
