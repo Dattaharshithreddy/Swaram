@@ -31,6 +31,11 @@ def sway_schedule(steps: int, coef: float = -1.0) -> np.ndarray:
     return t.astype(np.float32)
 
 
+def guided_steps(steps: int, guidance: float) -> int:
+    """How many of the first steps get classifier-free guidance; the rest run one branch (half the work)."""
+    return max(1, min(steps, int(round(steps * guidance))))
+
+
 def normalize_ref_text(ref_text: str) -> str:
     """F5-TTS appends ". " so the reference and new text read as two sentences."""
     ref_text = ref_text.strip()
@@ -124,7 +129,7 @@ class EdgeTTS:
 
         self.mel = session("mel.onnx")
         self.context = session("context.onnx")
-        self.step = session("step.onnx")
+        self.flow = session("flow.onnx")
         self.vocoder = session("vocoder.onnx")
         vocab = json.loads((model_dir / "vocab.json").read_text(encoding="utf-8"))
         self.vocab = {tok: i for i, tok in enumerate(vocab)}
@@ -153,6 +158,7 @@ class EdgeTTS:
         steps: int = 16,
         cfg: float = 2.0,
         sway: float = -1.0,
+        guidance: float = 1.0,
         speed: float = 1.0,
         noise: np.ndarray | None = None,
         seed: int | None = None,
@@ -176,11 +182,16 @@ class EdgeTTS:
             noise = np.random.default_rng(seed).standard_normal((duration, N_MELS), dtype=np.float32)
         x = noise[None].astype(np.float32)
         ts = sway_schedule(steps, sway)
-        cfg_arr = np.array([cfg], dtype=np.float32)
+        n_guided = guided_steps(steps, guidance)
+        ctx_cond = np.ascontiguousarray(ctx[:1])
         step_times = []
         for i in range(steps):
             s0 = time.perf_counter()
-            v = self.step.run(None, {"x": x, "ctx": ctx, "t": ts[i : i + 1], "cfg": cfg_arr})[0]
+            if i < n_guided:
+                out = self.flow.run(None, {"x": x, "ctx": ctx, "t": ts[i : i + 1]})[0]
+                v = out[0:1] + (out[0:1] - out[1:2]) * cfg
+            else:
+                v = self.flow.run(None, {"x": x, "ctx": ctx_cond, "t": ts[i : i + 1]})[0]
             x = x + (ts[i + 1] - ts[i]) * v
             step_times.append(time.perf_counter() - s0)
         t2 = time.perf_counter()

@@ -8,9 +8,9 @@ Placeholder weights (speed testing only; the audio is noise):
 
     python -m swaram_edge.export --random --out build/edge-random
 
-Writes ``mel.onnx``, ``context.onnx``, ``step.onnx``, ``vocoder.onnx``,
-``step.int8.onnx``, ``vocab.json`` and ``manifest.json`` into ``--out``.
-Only the step graph is quantized: it holds ~97% of the weights and runs on
+Writes ``mel.onnx``, ``context.onnx``, ``flow.onnx``, ``vocoder.onnx``,
+``flow.int8.onnx``, ``vocab.json`` and ``manifest.json`` into ``--out``.
+Only the flow (step) graph is quantized: it holds ~97% of the weights and runs on
 every step. The small context graph gets bigger, not smaller, when quantized.
 """
 
@@ -110,7 +110,6 @@ def export_all(dit, cfg: F5Config, vocos, vocab: list[str], out: Path, *, quanti
     x = torch.randn(1, frames, N_MELS)
     ctx = torch.randn(2, frames, cfg.dim)
     t = torch.tensor([0.3])
-    cfg_strength = torch.tensor([2.0])
     mel = torch.randn(1, N_MELS, frames)
 
     timed(
@@ -124,10 +123,10 @@ def export_all(dit, cfg: F5Config, vocos, vocab: list[str], out: Path, *, quanti
                         {"text": {1: "n_text"}, "cond": {1: "frames"}, "ctx": {1: "frames"}}),
     )
     timed(
-        "step",
-        lambda: _export(FlowStep(dit).eval(), (x, ctx, t, cfg_strength), out / "step.onnx",
-                        ["x", "ctx", "t", "cfg"], ["v"],
-                        {"x": {1: "frames"}, "ctx": {1: "frames"}, "v": {1: "frames"}}),
+        "flow",
+        lambda: _export(FlowStep(dit).eval(), (x, ctx, t), out / "flow.onnx",
+                        ["x", "ctx", "t"], ["out"],
+                        {"x": {1: "frames"}, "ctx": {0: "branches", 1: "frames"}, "out": {0: "branches", 1: "frames"}}),
     )
     timed(
         "vocoder",
@@ -139,11 +138,11 @@ def export_all(dit, cfg: F5Config, vocos, vocab: list[str], out: Path, *, quanti
         # In a fresh process: quantizing a 1.3 GB graph next to the loaded
         # PyTorch model does not fit in 8 GB of RAM.
         timed(
-            "quantize step",
+            "quantize flow",
             lambda: subprocess.run(
                 [sys.executable, "-c",
                  "import sys; from swaram_edge.export import quantize; quantize(sys.argv[1], sys.argv[2])",
-                 str(out / "step.onnx"), str(out / "step.int8.onnx")],
+                 str(out / "flow.onnx"), str(out / "flow.int8.onnx")],
                 check=True,
             ),
         )
@@ -151,13 +150,13 @@ def export_all(dit, cfg: F5Config, vocos, vocab: list[str], out: Path, *, quanti
     (out / "vocab.json").write_text(json.dumps(vocab, ensure_ascii=False), encoding="utf-8")
     files = sorted(p.name for p in out.glob("*.onnx"))
     manifest = {
-        "format": "swaram-edge/1",
+        "format": "swaram-edge/2",
         "model": "IndicF5 (ai4bharat/IndicF5, MIT) + Vocos (charactr/vocos-mel-24khz, MIT)",
         "config": json.loads(cfg.to_json()),
         "sample_rate": SAMPLE_RATE,
         "hop_length": HOP_LENGTH,
         "n_mels": N_MELS,
-        "defaults": {"steps": 16, "cfg_strength": 2.0, "sway_coef": -1.0, "target_rms": 0.1},
+        "defaults": {"steps": 16, "cfg_strength": 2.0, "sway_coef": -1.0, "target_rms": 0.1, "guidance": 1.0},
         "files": {name: {"bytes": (out / name).stat().st_size, "sha256": _sha256(out / name)} for name in files},
         "export_seconds": timings,
     }

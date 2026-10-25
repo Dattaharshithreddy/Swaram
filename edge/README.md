@@ -13,7 +13,7 @@ result never changes between steps. For phones it is split into four graphs:
 |---|---|---|---|
 | `mel.onnx` | once per voice | 4 MB | reference clip → log-mel ("the voice file") |
 | `context.onnx` | once per sentence | 33 MB | text encoder + reference projection, both guidance branches |
-| `step.int8.onnx` | 8–32 times | 348 MB | the transformer only; both guidance branches in one batch |
+| `flow.int8.onnx` | 8–32 times | 348 MB | the transformer only; runs both guidance branches in one batch, or just one on late steps |
 | `vocoder.onnx` | once per sentence | 62 MB | Vocos, with the iSTFT rewritten as matrix products |
 
 - **Exact:** `tests/test_parity.py` checks the split pipeline against the

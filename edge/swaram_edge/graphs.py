@@ -157,7 +157,13 @@ class ContextEncoder(nn.Module):
 
 
 class FlowStep(nn.Module):
-    """One guided flow-matching step: returns v = pred + (pred - null) * cfg."""
+    """One flow-matching step for B guidance branches: returns the raw velocity per branch.
+
+    ctx is (2, frames, dim) for a guided step (conditioned + null branch,
+    combined by the caller as pred + (pred - null) * cfg) or (1, frames, dim)
+    for an unguided step, which costs half as much. Late steps change the
+    audio little, so the app skips guidance there to save time.
+    """
 
     def __init__(self, dit, mel_dim: int = N_MELS):
         super().__init__()
@@ -170,19 +176,17 @@ class FlowStep(nn.Module):
         self.norm_out = dit.norm_out
         self.proj_out = dit.proj_out
 
-    def forward(self, x: torch.Tensor, ctx: torch.Tensor, t: torch.Tensor, cfg: torch.Tensor) -> torch.Tensor:
-        # x: (1, frames, mels), ctx: (2, frames, dim), t: (1,), cfg: (1,)
+    def forward(self, x: torch.Tensor, ctx: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        # x: (1, frames, mels), ctx: (B, frames, dim), t: (1,) -> (B, frames, mels)
         seq_len = x.shape[1]
-        h = F.linear(x, self.w_x) + ctx  # broadcasts x over both branches
+        h = F.linear(x, self.w_x) + ctx  # broadcasts x over the branches
         h = self.conv_pos_embed(h) + h
-        temb = self.time_embed(t.expand(2))
+        temb = self.time_embed(t.expand(ctx.shape[0]))
         rope = self.rotary_embed.forward_from_seq_len(seq_len)
         for block in self.transformer_blocks:
             h = block(h, temb, mask=None, rope=rope)
         h = self.norm_out(h, temb)
-        out = self.proj_out(h)
-        pred, null = out[0:1], out[1:2]
-        return pred + (pred - null) * cfg
+        return self.proj_out(h)
 
 
 # ---------------------------------------------------------------------------

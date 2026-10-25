@@ -133,3 +133,27 @@ def test_voice_roundtrip(tmp_path, built):
     assert wav.dtype == np.float32
     assert wav.size > 0
     assert timing.audio_seconds > 0
+
+
+def test_single_branch_step_equals_conditioned_branch(built):
+    """An unguided step (ctx batch 1) gives exactly the conditioned half of a guided one."""
+    _, _, out = built
+    tts = EdgeTTS(out, int8=False)
+    rng = np.random.default_rng(3)
+    frames = 120
+    x = rng.standard_normal((1, frames, 100)).astype(np.float32)
+    ctx = rng.standard_normal((2, frames, 1024)).astype(np.float32)
+    t = np.array([0.4], dtype=np.float32)
+    both = tts.flow.run(None, {"x": x, "ctx": ctx, "t": t})[0]
+    one = tts.flow.run(None, {"x": x, "ctx": np.ascontiguousarray(ctx[:1]), "t": t})[0]
+    assert both.shape == (2, frames, 100) and one.shape == (1, frames, 100)
+    np.testing.assert_allclose(one, both[:1], atol=1e-4)
+
+
+def test_partial_guidance_runs(built):
+    _, _, out = built
+    tts = EdgeTTS(out)
+    voice = tts.make_voice(_wav(3.0), "అ ఆ ఇ")
+    wav, timing = tts.speak(voice, "ఈ ఉ", steps=8, guidance=0.6, seed=1)
+    assert wav.size > 0 and np.isfinite(wav).all()
+    assert len(timing.step_times) == 8

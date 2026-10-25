@@ -82,6 +82,28 @@ def run(model_dir: str, ref: np.ndarray, ref_text: str, text: str, steps_list, p
     return results
 
 
+def guidance_study(model_dir: str, ref: np.ndarray, ref_text: str, text: str, steps: int = 8, threads=None) -> list[str]:
+    """How much skipping guidance on late steps changes the result, against seed-to-seed variation."""
+    tts = EdgeTTS(model_dir, int8=True, threads=threads)
+    voice = tts.make_voice(ref, ref_text)
+    ref_frames = voice.mel.shape[0]
+
+    def mel(guidance: float, seed: int):
+        t0 = time.perf_counter()
+        m = tts.speak_chunk(voice, text, steps=steps, guidance=guidance, seed=seed, return_mel=True)
+        return m[ref_frames:], time.perf_counter() - t0
+
+    base, base_s = mel(1.0, 0)
+    other_seed, _ = mel(1.0, 1)
+    seed_gap = float(np.abs(base - other_seed).mean())
+    lines = [f"steps={steps}  seed-to-seed mel gap={seed_gap:.3f}  full guidance {base_s:.1f}s"]
+    for g in (0.75, 0.6, 0.5, 0.4):
+        m, sec = mel(g, 0)
+        gap = float(np.abs(base - m).mean())
+        lines.append(f"guidance={g:.2f}  mel gap={gap:.3f} ({gap / seed_gap:.0%} of seed gap)  {sec:.1f}s ({sec / base_s:.0%} time)")
+    return lines
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("model_dir")
@@ -92,6 +114,7 @@ def main() -> None:
     p.add_argument("--precision", default="int8,fp32")
     p.add_argument("--threads", type=int, default=None)
     p.add_argument("--out", help="Folder for WAVs and results.json")
+    p.add_argument("--guidance-study", action="store_true", help="Also measure skipping guidance on late steps")
     args = p.parse_args()
 
     out = Path(args.out) if args.out else None
@@ -102,6 +125,10 @@ def main() -> None:
     precisions = [s.strip() for s in args.precision.split(",")]
     print(f"CPU: {platform.processor() or platform.machine()}, cores: {os.cpu_count()}, threads: {args.threads or 'auto'}")
     results = run(args.model_dir, ref, args.ref_text, args.text, steps, precisions, args.threads, out)
+    if args.guidance_study:
+        print("Guidance study (int8):")
+        for line in guidance_study(args.model_dir, ref, args.ref_text, args.text, threads=args.threads):
+            print("  " + line)
     if out:
         meta = {"machine": platform.machine(), "cpus": os.cpu_count(), "threads": args.threads, "results": results}
         (out / "results.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")

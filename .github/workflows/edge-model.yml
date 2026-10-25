@@ -72,7 +72,9 @@ jobs:
           python -m swaram_edge.benchmark "$OUT" \
             --ref ../IndicF5/prompts/PAN_F_HAPPY_00001.wav \
             --ref-text "ਭਹੰਪੀ ਵਿੱਚ ਸਮਾਰਕਾਂ ਦੇ ਭਵਨ ਨਿਰਮਾਣ ਕਲਾ ਦੇ ਵੇਰਵੇ ਗੁੰਝਲਦਾਰ ਅਤੇ ਹੈਰਾਨ ਕਰਨ ਵਾਲੇ ਹਨ, ਜੋ ਮੈਨੂੰ ਖੁਸ਼ ਕਰਦੇ  ਹਨ।" \
-            --steps "${{ inputs.steps }}" --precision int8,fp32 --out "$BENCH" | tee "$BENCH.txt"
+            --steps "${{ inputs.steps }}" --precision int8 --guidance-study --out "$BENCH" | tee "$BENCH.txt"
+          # Results as an annotation too, readable through the API.
+          echo "::notice title=Edge benchmark::$(sed 's/%/%25/g' "$BENCH.txt" | tr '\n' '\r' | sed 's/\r/%0A/g')"
           {
             echo "## Speed on a GitHub runner CPU"
             echo '```'
@@ -105,5 +107,5 @@ jobs:
             build/edge/vocab.json
             build/edge/mel.onnx
             build/edge/context.onnx
-            build/edge/step.int8.onnx
+            build/edge/flow.int8.onnx
             build/edge/vocoder.onnx
