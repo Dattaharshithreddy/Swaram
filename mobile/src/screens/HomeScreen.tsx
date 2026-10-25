@@ -151,6 +151,15 @@ export function HomeScreen() {
                 onPress={() => updatePrefs({ defaultVoice: keyOf(v) })}
               />
             ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="New voice"
+              onPress={() => app.setPage({ name: 'newVoice' })}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, minHeight: 40, borderRadius: 20, borderWidth: 1, borderStyle: 'dashed', borderColor: t.accent }}
+            >
+              <Icon name="plus" size={15} color={t.accent} />
+              <Text style={{ color: t.accent, fontFamily: font.bold, fontSize: 14 }}>New voice</Text>
+            </Pressable>
           </View>
           <TextInput
             value={text}
