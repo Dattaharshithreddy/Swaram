@@ -23,6 +23,7 @@ import {
 import { listVoices, loadVoiceData, type OfflineVoice } from '../edge/store';
 import { prepareText } from '../edge/telugu';
 import { radius, space, useTheme } from '../theme';
+import { downloadAudio } from '../download';
 import { spokenText } from '../translit';
 
 // The running job lives outside the component, so leaving the tab and coming
@@ -211,6 +212,7 @@ export function LongScript({
               {finished ? (
                 <>
                   <Button title="Play" kind="secondary" onPress={() => play(job)} />
+                  <Button title="Download" kind="secondary" onPress={() => downloadAudio(outputFile(job).uri, `${job.voiceName}-script`)} />
                   <Button title="Share" kind="secondary" onPress={() => Sharing.shareAsync(outputFile(job).uri, { mimeType: 'audio/wav' })} />
                 </>
               ) : isRunning ? (

@@ -168,8 +168,12 @@ export async function loadVoiceData(v: OfflineVoice): Promise<EdgeVoiceData> {
   return { mel, frames: v.frames, text: v.text, rms: v.rms };
 }
 
+export function recordingFile(v: OfflineVoice): File {
+  return new File(voicesDir(), `${v.id}.wav`);
+}
+
 export function hasRecording(v: OfflineVoice): boolean {
-  return new File(voicesDir(), `${v.id}.wav`).exists;
+  return recordingFile(v).exists;
 }
 
 /** A zip with the recording and its words, to upload to the Kaggle notebook. Returns its uri. */

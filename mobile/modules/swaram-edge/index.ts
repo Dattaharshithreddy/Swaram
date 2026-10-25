@@ -40,6 +40,8 @@ export interface SwaramEdgeNative {
   /** Personal fast voice (Piper/VITS ONNX). */
   piperLoad(modelPath: string, threads: number): Promise<number>;
   piperSynth(ids: number[], noiseScale: number, lengthScale: number, noiseW: number, outPath: string): Promise<number>;
+  /** Copies a file to Downloads/Swaram. Returns where it went. */
+  saveToDownloads(src: string, displayName: string, mime: string): Promise<string>;
   unzip(zipPath: string, destDir: string): Promise<string[]>;
   zip(paths: string[], names: string[], outPath: string): Promise<void>;
   /** How the app last ended, if that was a crash (shown once); otherwise null. */

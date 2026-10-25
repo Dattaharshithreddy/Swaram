@@ -265,6 +265,46 @@ class SwaramEdgeModule : Module() {
       }
     }
 
+    /**
+     * Copies a file into the phone's Downloads/Swaram folder (visible in the
+     * Files app). Returns where it went.
+     */
+    AsyncFunction("saveToDownloads") { src: String, displayName: String, mime: String ->
+      val ctx = appCtx
+      val from = File(pathOf(src))
+      if (!from.exists()) throw EdgeException("The audio file is missing")
+      if (Build.VERSION.SDK_INT >= 29) {
+        val values = android.content.ContentValues().apply {
+          put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+          put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+          put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/Swaram")
+          put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val resolver = ctx.contentResolver
+        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+          ?: throw EdgeException("Could not create the file in Downloads")
+        try {
+          resolver.openOutputStream(uri)!!.use { out -> from.inputStream().use { it.copyTo(out) } }
+          values.clear()
+          values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+          resolver.update(uri, values, null, null)
+        } catch (t: Throwable) {
+          resolver.delete(uri, null, null)
+          throw EdgeException("Could not save to Downloads: ${t.message}", t)
+        }
+      } else {
+        @Suppress("DEPRECATION")
+        val dir = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "Swaram")
+        try {
+          dir.mkdirs()
+          from.copyTo(File(dir, displayName), overwrite = true)
+        } catch (t: Throwable) {
+          throw EdgeException("This Android version needs Share to save files: ${t.message}", t)
+        }
+      }
+      "Downloads/Swaram/$displayName"
+    }
+
     /** Extracts a zip into destDir. Returns the file names. */
     AsyncFunction("unzip") { zipPath: String, destDir: String ->
       val dest = File(pathOf(destDir)).apply { mkdirs() }

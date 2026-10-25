@@ -32,6 +32,8 @@ import {
 import { LANGUAGES, type LanguageCode, languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
 import { ReadAs } from '../components/ReadAs';
+import { downloadAudio } from '../download';
+import { KaggleTrain } from './KaggleTrain';
 import { UploadClip } from './UploadClip';
 import { jobRunning, LongScript, type ScriptVoice } from './LongScript';
 import * as DocumentPicker from 'expo-document-picker';
@@ -361,11 +363,17 @@ export function OfflineScreen() {
                 />
               )}
             </View>
-            {voice && !fastSelected && hasRecording(voice) && (
-              <Button title="Export for training (personal fast voice)" kind="secondary" onPress={() => exportVoice(voice)} />
-            )}
             <Button title="Import personal voice (.zip)" kind="secondary" onPress={importFast} />
+            {voice && !fastSelected && hasRecording(voice) && (
+              <Text style={{ color: t.accent, fontWeight: '600' }} onPress={() => exportVoice(voice)}>
+                Export recording for training by hand (Kaggle notebook)
+              </Text>
+            )}
           </Card>
+
+          {installed && voices.length > 0 && (
+            <KaggleTrain voice={fastSelected ? undefined : voice} onImported={() => setFastVoices(listPersonal())} />
+          )}
 
           {target && (
             <Card>
@@ -434,6 +442,15 @@ export function OfflineScreen() {
                         if (status.duration > 0 && status.currentTime >= status.duration - 0.05) void player.seekTo(0);
                         player.play();
                       }
+                    }}
+                  />
+                  <Button
+                    title="Download"
+                    kind="secondary"
+                    style={{ flex: 1 }}
+                    onPress={() => {
+                      const uri = fastSelected ? fastResult?.uri : result?.uri;
+                      if (uri) void downloadAudio(uri, target?.voice.name);
                     }}
                   />
                   <Button

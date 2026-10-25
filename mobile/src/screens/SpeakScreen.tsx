@@ -7,6 +7,7 @@ import { Body, Button, Card, Chip, Field, Label, Notice, Title } from '../compon
 import { languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
 import { ReadAs } from '../components/ReadAs';
+import { downloadAudio } from '../download';
 import { spokenText } from '../translit';
 
 interface Take {
@@ -152,6 +153,7 @@ export function SpeakScreen({
                 </Text>
                 <View style={{ flexDirection: 'row', gap: space.sm }}>
                   <Button title={active ? 'Pause' : 'Play'} kind="secondary" onPress={() => play(take.uri)} style={{ flex: 1 }} />
+                  <Button title="Download" kind="secondary" onPress={() => downloadAudio(take.uri, take.voice)} style={{ flex: 1 }} />
                   <Button title="Share" kind="secondary" onPress={() => share(take.uri)} style={{ flex: 1 }} />
                 </View>
               </View>
