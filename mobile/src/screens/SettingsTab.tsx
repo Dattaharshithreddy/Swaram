@@ -124,13 +124,13 @@ export function SettingsTab() {
             <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 14 }}>Big-model quality</Text>
             <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
               {QUALITY.map((q) => (
-                <Chip key={q.steps} label={`${q.label} · ${q.steps}`} selected={!prefs.studio && prefs.steps === q.steps} onPress={async () => {
+                <Chip key={q.steps} label={`${q.label} · ${q.steps}`} selected={prefs.steps === q.steps} onPress={async () => {
                   updatePrefs({ steps: q.steps, studio: false });
                   if (prefs.studio) await app.releaseEngine();
                 }} />
               ))}
             </View>
-            <Notice text={prefs.studio ? 'Studio quality is on, so it always uses 32 steps. Turn it off below to use these.' : "Fewer steps are faster but rougher. Fast voices don't use this."} />
+            <Notice text="Fewer steps are faster but rougher. Fast voices don't use this. For the best quality, use Studio render on Kaggle (Studio → open a project)." />
           </View>
           <View style={{ gap: space.sm, paddingVertical: 14, borderTopWidth: 1, borderTopColor: t.surface2 }}>
             <StudioQuality />

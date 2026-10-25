@@ -53,7 +53,8 @@ export const SPEEDS = [0.85, 1, 1.15];
 
 /** The steps to use: Studio quality always runs the full 32 steps. */
 export function effectiveSteps(p: { steps: number; studio?: boolean }): number {
-  return p.studio && studioInstalled() ? 32 : p.steps;
+  // Studio quality on the phone was retired (about 15 minutes per line); Kaggle renders replace it.
+  return p.steps;
 }
 
 export function guidanceFor(steps: number) {
@@ -162,7 +163,7 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
 
   const getEngine = useCallback(async () => {
     const provider = getPrefs().provider;
-    const studio = getPrefs().studio && studioInstalled();
+    const studio = false;
     const want = `${provider}${studio ? '+studio' : ''}`;
     if (engine.current && engineProvider.current === want) return engine.current;
     await engine.current?.release();
@@ -409,7 +410,6 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
           setInstalled(modelInstalled());
         } else {
           await downloadStudio(progress, ctl, (status) => set({ status }));
-          updatePrefs({ studio: true });
           await engine.current?.release();
           engine.current = null;
         }

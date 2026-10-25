@@ -448,23 +448,13 @@ export function StudioScreen() {
                 <Chip
                   key={q.steps}
                   label={q.label}
-                  selected={!(prefs.studio && studioInstalled()) && prefs.steps === q.steps}
+                  selected={prefs.steps === q.steps}
                   onPress={async () => {
                     updatePrefs({ steps: q.steps, studio: false });
                     if (prefs.studio) await app.releaseEngine();
                   }}
                 />
               ))}
-              {studioInstalled() && (
-                <Chip
-                  label="Studio"
-                  selected={prefs.studio}
-                  onPress={async () => {
-                    updatePrefs({ studio: true });
-                    await app.releaseEngine();
-                  }}
-                />
-              )}
             </View>
           </View>
         )}

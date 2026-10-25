@@ -182,7 +182,7 @@ export function HomeScreen() {
                   : 'Making it on this phone…'
                 : selected?.kind === 'fast'
                   ? `${displayName(selected)} · about a second`
-                  : prefs.studio && studioInstalled() ? 'Big model · Studio quality · ~2 min' : `Big model · ${prefs.steps === 8 ? 'Fast' : prefs.steps === 16 ? 'Balanced' : 'Best'} · ~30 s`}
+                  : `Big model · ${prefs.steps === 8 ? 'Fast' : prefs.steps === 16 ? 'Balanced' : 'Best'} · ~30 s`}
             </Text>
             <Button title="Speak" icon="play" onPress={speak} busy={busy} disabled={!text.trim() || !selected} style={{ paddingHorizontal: 22 }} />
           </View>
