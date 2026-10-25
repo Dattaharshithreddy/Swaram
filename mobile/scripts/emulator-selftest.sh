@@ -7,6 +7,12 @@ PROVIDER=${2:-xnnpack}
 PKG=com.dattaharshithreddy.swaram
 
 adb install -r "$APK" || { echo "::error title=Emulator::install failed"; exit 1; }
+
+# The emulator's network can come up after boot; wait for DNS before testing.
+for i in $(seq 1 30); do
+  adb shell ping -c 1 -W 2 github.com >/dev/null 2>&1 && break
+  sleep 4
+done
 adb logcat -c
 adb logcat -v time > logcat.txt 2>&1 &
 LOGCAT=$!
