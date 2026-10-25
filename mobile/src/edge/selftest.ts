@@ -8,6 +8,8 @@
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { encodeWav, SAMPLE_RATE } from './dsp';
 import { EdgeEngine, type Provider } from './engine';
+import { File, Paths } from 'expo-file-system';
+import { createJob, outputFile, partsDone, runJob } from './jobs';
 import { downloadModel, loadVoiceData, modelDir, modelInstalled, saveAudio, saveVoice } from './store';
 import { prepareText } from './telugu';
 import { spokenText } from '../translit';
@@ -78,9 +80,37 @@ export async function runSelfTest(provider: Provider = 'xnnpack'): Promise<void>
     }
     if (!finite || wav.length === 0) throw new Error(`bad audio: samples=${wav.length} finite=${finite}`);
     log(
-      `OK audio=${timing.audioSeconds.toFixed(2)}s wall=${wall.toFixed(1)}s context=${timing.contextSeconds.toFixed(2)}s ` +
+      `speak ok audio=${timing.audioSeconds.toFixed(2)}s wall=${wall.toFixed(1)}s context=${timing.contextSeconds.toFixed(2)}s ` +
         `steps=${timing.stepSeconds.toFixed(1)}s vocoder=${timing.vocoderSeconds.toFixed(2)}s peak=${peak.toFixed(3)} file=${file.uri}`,
     );
+    // Upload path: decode an audio file (a WAV made here) back to 24 kHz.
+    const upload = new File(Paths.cache, 'selftest-upload.wav');
+    upload.writeSync(encodeWav(testClip(5)));
+    const decoded = new File(Paths.cache, 'selftest-upload.f32');
+    if (decoded.exists) decoded.delete();
+    const n = await SwaramEdge.decodeAudio(upload.uri, decoded.uri, 600);
+    log(`decoded upload samples=${n}`);
+    if (Math.abs(n - 5 * SAMPLE_RATE) > SAMPLE_RATE / 10) throw new Error(`decode length ${n}`);
+
+    // Long script: stop after the first part, resume, join.
+    const script = prepareText(
+      'ఈ రోజు మనం ఒక చిన్న కథ చెప్పుకుందాం. ఒక ఊరిలో ఒక రైతు ఉండేవాడు, అతను ప్రతి రోజు పొలానికి వెళ్ళేవాడు. ' +
+        'ఒక రోజు అతనికి ఒక బంగారు గుడ్డు దొరికింది, అతను చాలా సంతోషపడ్డాడు. తర్వాత ఏమి జరిగిందో చూద్దాం.',
+      'te',
+    );
+    const job = createJob(engine, saved, reloaded, script, { steps: 2, guidance: 0.5 });
+    log(`job parts=${job.parts.length}`);
+    if (job.parts.length < 2) throw new Error('script did not split into parts');
+    let stopNow = false;
+    const first = await runJob(job, engine, reloaded, (p) => {
+      if (p.partsDone >= 1) stopNow = true;
+    }, () => stopNow);
+    log(`job stopped=${!first} done=${partsDone(job)}`);
+    const finished = await runJob(job, engine, reloaded, () => {}, () => false);
+    const out = outputFile(job);
+    log(`job finished=${finished} wav=${out.exists ? out.size : 0} bytes audio=${job.audioSeconds.toFixed(1)}s`);
+    if (!finished || !out.exists || (out.size ?? 0) < 44 + 2 * SAMPLE_RATE) throw new Error('job output missing');
+    log('OK all checks passed (speak, upload decode, long script resume + join)');
     await engine.release();
   } catch (e) {
     log(`FAIL ${e instanceof Error ? `${e.message} ${e.stack ?? ''}` : String(e)}`.replace(/\n/g, ' | '));

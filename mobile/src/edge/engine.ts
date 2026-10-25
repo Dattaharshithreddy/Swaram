@@ -90,12 +90,12 @@ function scratch(name: string): File {
   return f;
 }
 
-function writeFloats(f: File, data: Float32Array) {
+export function writeFloats(f: File, data: Float32Array) {
   // Float32Array is little-endian on every Android device.
   f.writeSync(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
 }
 
-async function readFloats(f: File): Promise<Float32Array> {
+export async function readFloats(f: File): Promise<Float32Array> {
   const bytes = await f.bytes();
   return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 }
@@ -149,7 +149,25 @@ export class EdgeEngine {
     return Array.from(text, (c) => this.vocab.get(c) ?? 0);
   }
 
-  private async speakChunk(
+  /** The parts a text is split into for this voice (each at most ~25 s with the reference). */
+  chunks(voice: EdgeVoiceData, text: string): string[] {
+    const refSeconds = (voice.frames * HOP) / SAMPLE_RATE;
+    const maxBytes = Math.floor((utf8Length(voice.text) / Math.max(refSeconds, 1e-3)) * (25 - refSeconds));
+    return chunkText(text, Math.max(maxBytes, 60));
+  }
+
+  /** Writes the voice's mel where the native engine reads it; pass the uri to speakChunk. */
+  refMelFile(voice: EdgeVoiceData): string {
+    const refMel = scratch('cond.mel');
+    writeFloats(refMel, voice.mel.subarray(0, voice.frames * N_MELS));
+    return refMel.uri;
+  }
+
+  newTiming(steps: number): Timing {
+    return { loadSeconds: this.loadSeconds, contextSeconds: 0, stepSeconds: 0, vocoderSeconds: 0, audioSeconds: 0, steps };
+  }
+
+  async speakChunk(
     voice: EdgeVoiceData,
     text: string,
     opts: { steps: number; cfg: number; sway: number; guidance: number; speed: number },
@@ -189,26 +207,16 @@ export class EdgeEngine {
 
   async speak(voice: EdgeVoiceData, text: string, options: SpeakOptions = {}) {
     const opts = { steps: 16, cfg: 2.0, sway: -1.0, guidance: 1.0, speed: 1.0, ...options };
-    const timing: Timing = {
-      loadSeconds: this.loadSeconds,
-      contextSeconds: 0,
-      stepSeconds: 0,
-      vocoderSeconds: 0,
-      audioSeconds: 0,
-      steps: opts.steps,
-    };
-    const refSeconds = (voice.frames * HOP) / SAMPLE_RATE;
-    const maxBytes = Math.floor((utf8Length(voice.text) / Math.max(refSeconds, 1e-3)) * (25 - refSeconds));
-    const chunks = chunkText(text, Math.max(maxBytes, 60));
+    const timing = this.newTiming(opts.steps);
+    const chunks = this.chunks(voice, text);
     const progress = { done: 0, total: chunks.length * opts.steps };
     const sub = options.onProgress
       ? native().addListener('onProgress', (e) => options.onProgress?.(e.done, e.total))
       : null;
     try {
-      const refMel = scratch('cond.mel');
-      writeFloats(refMel, voice.mel.subarray(0, voice.frames * N_MELS));
+      const refMel = this.refMelFile(voice);
       const pieces: Float32Array[] = [];
-      for (const chunk of chunks) pieces.push(await this.speakChunk(voice, chunk, opts, timing, progress, refMel.uri));
+      for (const chunk of chunks) pieces.push(await this.speakChunk(voice, chunk, opts, timing, progress, refMel));
       return { wav: crossFade(pieces), timing };
     } finally {
       sub?.remove();

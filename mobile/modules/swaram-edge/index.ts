@@ -28,6 +28,15 @@ export interface SwaramEdgeNative {
   release(): Promise<void>;
   computeMel(wavPath: string, melPath: string): Promise<number>;
   synthesize(ids: number[], refMelPath: string, schedule: number[], outPath: string, opts: SynthOptions): Promise<SynthTiming>;
+  /** Any audio file Android can play -> mono float32 at 24 kHz in outPath. Returns samples. */
+  decodeAudio(src: string, outPath: string, maxSeconds: number): Promise<number>;
+  /** Joins float32 part files into one 16-bit WAV with cross-fades. Returns samples. */
+  joinWav(parts: string[], outPath: string, fadeSamples: number): Promise<number>;
+  /** Foreground service + wake lock so generation continues with the screen off. */
+  startBackground(title: string, text: string): boolean;
+  updateBackground(title: string, text: string, done: number, total: number): void;
+  stopBackground(): void;
+  requestNotifications(): void;
   /** How the app last ended, if that was a crash (shown once); otherwise null. */
   crashReport(): string | null;
   addListener(event: 'onProgress', listener: (e: { done: number; total: number }) => void): { remove(): void };

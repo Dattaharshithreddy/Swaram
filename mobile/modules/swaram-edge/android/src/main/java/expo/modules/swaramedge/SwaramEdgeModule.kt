@@ -5,6 +5,10 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
+import android.app.NotificationManager
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.Context
 import android.net.Uri
 import android.os.Build
@@ -199,6 +203,55 @@ class SwaramEdgeModule : Module() {
           throw EdgeException("Generation failed: ${t.message}", t)
         }
       }
+    }
+
+    /** Any audio file Android can play -> mono float32 at 24 kHz in outPath. Returns samples. */
+    AsyncFunction("decodeAudio") { src: String, outPath: String, maxSeconds: Double ->
+      try {
+        AudioTools.decodeToMono24k(pathOf(src), File(pathOf(outPath)), maxSeconds)
+      } catch (t: Throwable) {
+        trail("decode failed: $t")
+        throw EdgeException("Could not read this audio file: ${t.message}", t)
+      }
+    }
+
+    /** Joins float32 part files into one 16-bit WAV with short cross-fades. Returns samples. */
+    AsyncFunction("joinWav") { parts: List<String>, outPath: String, fadeSamples: Int ->
+      AudioTools.joinToWav(parts.map { File(pathOf(it)) }, File(pathOf(outPath)), fadeSamples).toDouble()
+    }
+
+    Function("startBackground") { title: String, text: String ->
+      val ctx = appCtx
+      val intent = Intent(ctx, SwaramWorkService::class.java).putExtra("title", title).putExtra("text", text)
+      runCatching {
+        if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(intent) else ctx.startService(intent)
+      }.onFailure { trail("background start failed: $it") }.isSuccess
+    }
+
+    Function("updateBackground") { title: String, text: String, done: Int, total: Int ->
+      val ctx = appCtx
+      runCatching {
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(SwaramWorkService.NOTIFICATION_ID, SwaramWorkService.build(ctx, title, text, done, total))
+      }
+      Unit
+    }
+
+    Function("stopBackground") {
+      val ctx = appCtx
+      runCatching { ctx.stopService(Intent(ctx, SwaramWorkService::class.java)) }
+      Unit
+    }
+
+    /** Android 13+: ask once so the progress notification can show. */
+    Function("requestNotifications") {
+      if (Build.VERSION.SDK_INT >= 33) {
+        val activity = appContext.currentActivity
+        if (activity != null && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+          activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4207)
+        }
+      }
+      Unit
     }
 
     OnDestroy {

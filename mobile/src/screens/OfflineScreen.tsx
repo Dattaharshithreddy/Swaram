@@ -30,6 +30,8 @@ import {
 import { LANGUAGES, type LanguageCode, languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
 import { ReadAs } from '../components/ReadAs';
+import { UploadClip } from './UploadClip';
+import { jobRunning, LongScript } from './LongScript';
 import { spokenText } from '../translit';
 
 const INDIC = LANGUAGES.filter((l) => l.code !== 'en');
@@ -89,7 +91,13 @@ export function OfflineScreen() {
   const voice = voices.find((v) => v.id === voiceId) ?? voices[0];
   const lang = languageByCode(voice?.language);
 
-  useEffect(() => () => void engine.current?.release(), []);
+  // Free the model's memory when leaving the tab, unless a long script is still generating.
+  useEffect(
+    () => () => {
+      if (!jobRunning()) void engine.current?.release();
+    },
+    [],
+  );
 
   const getEngine = useCallback(async () => {
     if (engine.current && engineProvider.current === provider) return engine.current;
@@ -333,6 +341,14 @@ export function OfflineScreen() {
               )}
             </Card>
           )}
+          {voice && (
+            <LongScript
+              getEngine={getEngine}
+              voice={voice}
+              steps={steps}
+              guidance={QUALITY.find((q) => q.steps === steps)?.guidance ?? 1}
+            />
+          )}
         </>
       )}
       {error && <Notice text={error} kind="error" />}
@@ -377,6 +393,7 @@ function NewOfflineVoice({
   const [transcript, setTranscript] = useState(OFFLINE_READ[language] ?? lang?.readAloud ?? '');
   const [seconds, setSeconds] = useState(0);
   const [clip, setClip] = useState<Float32Array | null>(null);
+  const [source, setSource] = useState<'mic' | 'file'>('mic');
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -405,8 +422,17 @@ function NewOfflineVoice({
   }, [isStreaming, seconds]);
 
   useEffect(() => {
-    setTranscript(OFFLINE_READ[language] ?? languageByCode(language)?.readAloud ?? '');
-  }, [language]);
+    if (source === 'mic') setTranscript(OFFLINE_READ[language] ?? languageByCode(language)?.readAloud ?? '');
+  }, [language, source]);
+
+  function chooseSource(next: 'mic' | 'file') {
+    if (next === source) return;
+    if (isStreaming) stream.stop();
+    setClip(null);
+    setSeconds(0);
+    if (next === 'file') setTranscript('');
+    setSource(next);
+  }
 
   async function start() {
     setError(null);
@@ -477,29 +503,52 @@ function NewOfflineVoice({
         </View>
       </Card>
       <Card>
-        <Label>Record 4-8 seconds</Label>
-        <Body muted>Read this aloud exactly, in a quiet room:</Body>
-        <Field
-          label="What you will read (edit if you say something else)"
-          value={transcript}
-          onChangeText={setTranscript}
-          multiline
-          style={{ minHeight: 80, textAlignVertical: 'top', fontSize: 17, lineHeight: 26 }}
-        />
-        <Pressable
-          accessibilityRole="button"
-          onPress={isStreaming ? stop : start}
-          style={[styles.mic, { backgroundColor: isStreaming ? t.danger : t.accent }]}
-        >
-          <Text style={{ color: t.onAccent, fontSize: 17, fontWeight: '800' }}>
-            {isStreaming ? `Stop · ${seconds.toFixed(1)} s` : clip ? 'Record again' : 'Record'}
-          </Text>
-        </Pressable>
-        {clip && (
-          <Notice
-            text={`${clipSeconds.toFixed(1)} s recorded${lengthOk ? ': good length.' : ': aim for 4-8 seconds.'}`}
-            kind={lengthOk ? 'ok' : 'error'}
-          />
+        <View style={styles.wrap}>
+          <Chip label="Record now" selected={source === 'mic'} onPress={() => chooseSource('mic')} />
+          <Chip label="Upload a recording" selected={source === 'file'} onPress={() => chooseSource('file')} />
+        </View>
+        {source === 'mic' ? (
+          <>
+            <Label>Record 4-8 seconds</Label>
+            <Body muted>Read this aloud exactly, in a quiet room:</Body>
+            <Field
+              label="What you will read (edit if you say something else)"
+              value={transcript}
+              onChangeText={setTranscript}
+              multiline
+              style={{ minHeight: 80, textAlignVertical: 'top', fontSize: 17, lineHeight: 26 }}
+            />
+            <Pressable
+              accessibilityRole="button"
+              onPress={isStreaming ? stop : start}
+              style={[styles.mic, { backgroundColor: isStreaming ? t.danger : t.accent }]}
+            >
+              <Text style={{ color: t.onAccent, fontSize: 17, fontWeight: '800' }}>
+                {isStreaming ? `Stop · ${seconds.toFixed(1)} s` : clip ? 'Record again' : 'Record'}
+              </Text>
+            </Pressable>
+            {clip && (
+              <Notice
+                text={`${clipSeconds.toFixed(1)} s recorded${lengthOk ? ': good length.' : ': aim for 4-8 seconds.'}`}
+                kind={lengthOk ? 'ok' : 'error'}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <UploadClip onClip={setClip} />
+            <Field
+              label="Exactly what is said in this part"
+              value={transcript}
+              onChangeText={setTranscript}
+              multiline
+              placeholder="Type every word you hear, in Telugu script or English letters"
+              style={{ minHeight: 80, textAlignVertical: 'top', fontSize: 17, lineHeight: 26 }}
+            />
+            {language === 'te' && transcript.trim() !== '' && (
+              <ReadAs text={transcript} language={language} onUse={setTranscript} />
+            )}
+          </>
         )}
       </Card>
       <Card>
