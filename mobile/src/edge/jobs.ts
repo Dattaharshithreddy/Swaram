@@ -8,6 +8,7 @@
  * notification keeps generation going with the screen off.
  */
 import { Directory, File, Paths } from 'expo-file-system';
+import { getPrefs } from './prefs';
 import { SwaramEdge } from '../../modules/swaram-edge';
 import { SAMPLE_RATE } from './dsp';
 import { chunkText, chunksFor, type EdgeEngine, type EdgeVoiceData, writeFloats } from './engine';
@@ -394,6 +395,7 @@ async function finish(job: ScriptJob) {
   if (out.exists) out.delete();
   const samples = await edge.joinWav(files, out.uri, Math.floor(fade * SAMPLE_RATE));
   job.audioSeconds = samples / SAMPLE_RATE;
+  if (getPrefs().polish) await edge.polish(out.uri, out.uri);
   const srt = srtFile(job);
   if (srt.exists) srt.delete();
   srt.writeSync(toSrt(cues));

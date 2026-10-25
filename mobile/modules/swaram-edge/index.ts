@@ -34,6 +34,8 @@ export interface SwaramEdgeNative {
   mixMusic(voiceWav: string, music: string, outWav: string, gain: number, duck: boolean, fadeSec: number): Promise<number>;
   /** Reduces steady background noise in a float32 file (strength 0-1). Returns samples. */
   denoise(inPath: string, outPath: string, strength: number): Promise<number>;
+  /** Studio finishing: EQ, compression, loudness to about -16 LUFS, limiter. 16-bit WAV in and out (in place is fine). */
+  polish(inPath: string, outPath: string): Promise<number>;
   /** A video with its sound replaced by the .m4a. */
   muxVideo(video: string, audioM4a: string, outMp4: string): Promise<number>;
   /** 16-bit WAV -> AAC .m4a. Returns samples. */

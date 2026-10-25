@@ -238,6 +238,7 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
         }
         const wav = ref.kind === 'fast' ? crossFade(audio, 0.05) : crossFade(audio);
         const file = saveAudio(encodeWav(wav));
+        if (getPrefs().polish && SwaramEdge) await SwaramEdge.polish(file.uri, file.uri);
         const item = addRecent({
           uri: file.uri,
           title: text.replace(/\[[^\]]*\]/g, ' ').trim().split(/\s+/).slice(0, 10).join(' '),

@@ -55,6 +55,87 @@ object AudioFx {
     f.writeBytes(bb.array())
   }
 
+  /** One biquad section (RBJ cookbook), run in place. */
+  private fun biquad(x: FloatArray, b0: Double, b1: Double, b2: Double, a0: Double, a1: Double, a2: Double) {
+    var x1 = 0.0; var x2 = 0.0; var y1 = 0.0; var y2 = 0.0
+    val nb0 = b0 / a0; val nb1 = b1 / a0; val nb2 = b2 / a0; val na1 = a1 / a0; val na2 = a2 / a0
+    for (i in x.indices) {
+      val xi = x[i].toDouble()
+      val y = nb0 * xi + nb1 * x1 + nb2 * x2 - na1 * y1 - na2 * y2
+      x2 = x1; x1 = xi; y2 = y1; y1 = y
+      x[i] = y.toFloat()
+    }
+  }
+
+  private fun highPass(x: FloatArray, hz: Double, q: Double = 0.707) {
+    val w = 2 * PI * hz / RATE; val a = sin(w) / (2 * q); val c = cos(w)
+    biquad(x, (1 + c) / 2, -(1 + c), (1 + c) / 2, 1 + a, -2 * c, 1 - a)
+  }
+
+  private fun peak(x: FloatArray, hz: Double, db: Double, q: Double) {
+    val A = Math.pow(10.0, db / 40); val w = 2 * PI * hz / RATE; val a = sin(w) / (2 * q); val c = cos(w)
+    biquad(x, 1 + a * A, -2 * c, 1 - a * A, 1 + a / A, -2 * c, 1 - a / A)
+  }
+
+  /**
+   * Finishing touches like a studio would add: rumble cut, a little less mud and
+   * a little more presence, gentle compression, loudness levelled to about
+   * -16 LUFS (what podcasts and YouTube expect) and a limiter so nothing clips.
+   * Reads and writes 16-bit WAV (in place is fine). Returns samples.
+   */
+  fun polish(input: File, out: File): Int {
+    val x = readWav16(input)
+    if (x.isEmpty()) { writeWav16(out, x); return 0 }
+    highPass(x, 70.0)
+    peak(x, 300.0, -1.5, 0.9)
+    peak(x, 3200.0, 2.0, 0.8)
+    // Compressor: 2.5:1 above -22 dBFS on a 10 ms / 150 ms RMS envelope.
+    val att = Math.exp(-1.0 / (0.010 * RATE)); val rel = Math.exp(-1.0 / (0.150 * RATE))
+    var env = 0.0
+    for (i in x.indices) {
+      val p = x[i].toDouble() * x[i]
+      env = if (p > env) att * env + (1 - att) * p else rel * env + (1 - rel) * p
+      val db = 10 * Math.log10(env + 1e-12)
+      val over = db + 22
+      if (over > 0) x[i] = (x[i] * Math.pow(10.0, -over * (1 - 1 / 2.5) / 20)).toFloat()
+    }
+    // Loudness: RMS of the speech parts (20 ms frames above -50 dBFS) to -18 dBFS.
+    val frame = RATE / 50
+    var sum = 0.0; var count = 0L
+    var f = 0
+    while (f + frame <= x.size) {
+      var s = 0.0
+      for (i in f until f + frame) s += x[i].toDouble() * x[i]
+      if (10 * Math.log10(s / frame + 1e-12) > -50) { sum += s; count += frame }
+      f += frame
+    }
+    if (count > 0) {
+      val db = 10 * Math.log10(sum / count + 1e-12)
+      val g = Math.pow(10.0, ((-18.0 - db).coerceIn(-12.0, 18.0)) / 20).toFloat()
+      for (i in x.indices) x[i] *= g
+    }
+    // Look-ahead limiter at -1 dBFS (5 ms look-ahead, 80 ms release).
+    val ceil = 0.891f
+    val look = RATE / 200
+    val need = FloatArray(x.size) { val a = abs(x[it]); if (a > ceil) ceil / a else 1f }
+    val gmin = FloatArray(x.size)
+    val dq = ArrayDeque<Int>()
+    for (i in x.size - 1 downTo 0) { // running minimum over the next `look` samples
+      while (dq.isNotEmpty() && need[dq.last()] >= need[i]) dq.removeLast()
+      dq.addLast(i)
+      while (dq.first() > i + look) dq.removeFirst()
+      gmin[i] = need[dq.first()]
+    }
+    val relG = (1 - Math.exp(-1.0 / (0.080 * RATE))).toFloat()
+    var g = 1f
+    for (i in x.indices) {
+      g = if (gmin[i] < g) gmin[i] else g + relG * (1f - g)
+      x[i] = (x[i] * g).coerceIn(-ceil, ceil)
+    }
+    writeWav16(out, x)
+    return x.size
+  }
+
   /**
    * Mixes music (any audio file, looped) under a voice WAV. The music dips
    * while the voice speaks (ducking) and fades in and out. Writes a WAV.

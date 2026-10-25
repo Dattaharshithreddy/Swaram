@@ -16,9 +16,10 @@ import { UploadClip } from './UploadClip';
 import { friendlyError } from '../errors';
 
 const INDIC = LANGUAGES.filter((l) => l.code !== 'en');
-// A short reading: every second of the reference is processed again for each line spoken.
+// About 8-10 seconds: long enough to catch the voice well, short enough to keep
+// speaking quick (every second of the reference is processed again for each line).
 const OFFLINE_READ: Record<string, string> = {
-  te: 'నమస్కారం, ఈ రోజు వాతావరణం చాలా బాగుంది. నేను బయటికి వెళ్తున్నాను.',
+  te: 'నమస్కారం, ఈ రోజు వాతావరణం చాలా బాగుంది. నేను మా స్నేహితులతో కలిసి బయటికి వెళ్తున్నాను, సాయంత్రం ఇంటికి వస్తాను.',
 };
 
 /** Live level bars while recording, then the clip's shape. */
@@ -171,7 +172,7 @@ export function NewVoiceScreen2() {
   }
 
   const clipSeconds = clip ? clip.length / SAMPLE_RATE : seconds;
-  const lengthOk = clipSeconds >= 4 && clipSeconds <= 10;
+  const lengthOk = clipSeconds >= 5 && clipSeconds <= 12;
   const playing = clipUri ? player.isPlaying(clipUri) : false;
   const missing = [
     !name.trim() && 'type a name',
@@ -207,12 +208,13 @@ export function NewVoiceScreen2() {
       <Card>
         {source === 'mic' ? (
           <>
-            <Label>Read this aloud, 4-8 seconds</Label>
+            <Label>Read this aloud in one smooth go (6-12 seconds)</Label>
             <Text style={{ color: t.ink, fontSize: 17, lineHeight: 29 }}>{transcript}</Text>
+            <Notice text="For the best clone: a quiet room with no fan or echo, phone about a hand's length away, your normal pace without stopping between words, and the tone you want the voice to have." />
             <Bars levels={clip ? shape(clip) : levels} color={t.accent} />
             {(clip || isStreaming) && (
               <Text style={{ color: lengthOk || isStreaming ? t.ok : t.danger, fontFamily: font.semibold, fontSize: 13 }}>
-                {isStreaming ? `Recording · ${seconds.toFixed(1)} s` : `${clipSeconds.toFixed(1)} s${lengthOk ? ' · good length' : ' · aim for 4-8 seconds'}`}
+                {isStreaming ? `Recording · ${seconds.toFixed(1)} s` : `${clipSeconds.toFixed(1)} s${lengthOk ? ' · good length' : ' · aim for 6-12 seconds'}`}
               </Text>
             )}
             <Pressable

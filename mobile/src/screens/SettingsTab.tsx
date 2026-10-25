@@ -249,6 +249,13 @@ export function SettingsTab() {
           </View>
           <Notice text="M4A is about a sixth of the size and plays everywhere, including WhatsApp. Files go to Downloads/Swaram." />
         </Card>
+        <Card>
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            <Chip label="Studio finishing on" selected={prefs.polish} onPress={() => updatePrefs({ polish: true })} />
+            <Chip label="Off" selected={!prefs.polish} onPress={() => updatePrefs({ polish: false })} />
+          </View>
+          <Notice text="Cleans up low rumble, adds clarity, evens out loud and quiet parts and sets the volume YouTube and podcasts expect. Applies to new audio." />
+        </Card>
       </Section>
 
       <Section title="GPU server (optional, paid)">

@@ -17,6 +17,8 @@ export interface Prefs {
   /** Studio: speaker label -> voice key. */
   speakerVoices: Record<string, string>;
   defaultVoice?: string;
+  /** Studio finishing (EQ, loudness, limiter) on everything made. */
+  polish: boolean;
 }
 
 const DEFAULTS: Prefs = {
@@ -28,6 +30,7 @@ const DEFAULTS: Prefs = {
   draft: '',
   draftTitle: '',
   speakerVoices: {},
+  polish: true,
 };
 
 function file() {

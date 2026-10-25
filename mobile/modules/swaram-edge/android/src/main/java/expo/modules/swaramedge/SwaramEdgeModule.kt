@@ -403,6 +403,12 @@ class SwaramEdgeModule : Module() {
     }
 
     /** Reduces steady background noise in a float32 file. Returns samples. */
+    AsyncFunction("polish") { inPath: String, outPath: String, promise: Promise ->
+      off(toolPool, promise) {
+        AudioFx.polish(File(pathOf(inPath)), File(pathOf(outPath))).toDouble()
+      }
+    }
+
     AsyncFunction("denoise") { inPath: String, outPath: String, strength: Double, promise: Promise ->
       off(toolPool, promise) {
       AudioFx.denoise(File(pathOf(inPath)), File(pathOf(outPath)), strength.toFloat()).toDouble()
