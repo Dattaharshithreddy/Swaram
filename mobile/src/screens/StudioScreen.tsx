@@ -9,7 +9,7 @@ import { Badge, Button, Card, CardTitle, Chip, Empty, Field, Header, Icon, IconB
 import { VoicePicker } from '../components/VoicePicker';
 import { downloadAudio, downloadSubtitles, shareAudio } from '../download';
 import { encodeWav } from '../edge/dsp';
-import { readFloats } from '../edge/engine';
+import { readFloats, writeFloats } from '../edge/engine';
 import {
   createDubJob,
   createScriptJob,
@@ -51,35 +51,36 @@ function emotionSupport(v: VoiceRef, e: Emotion): boolean {
   return v.kind === 'f5' ? !!v.voice.emotions?.[e] : (v.voice.emotions ?? []).includes(e);
 }
 
-function partWav(job: ScriptJob, i: number): Promise<string> {
-  return readFloats(partFile(job, i)).then((x) => {
-    const f = new File(Paths.cache, `swaram-line-${job.id}-${i}.wav`);
-    if (f.exists) f.delete();
-    f.writeSync(encodeWav(x));
-    return f.uri;
-  });
+/** A line as a WAV for the player, made natively (off the JS thread) and reused until the line changes. */
+async function partWav(job: ScriptJob, i: number): Promise<string> {
+  const src = partFile(job, i);
+  const f = new File(Paths.cache, `swaram-line-${job.id}-${i}-${src.size}.wav`);
+  if (f.exists) return f.uri;
+  if (SwaramEdge) await SwaramEdge.joinWav([src.uri], f.uri, 0);
+  else f.writeSync(encodeWav(await readFloats(src)));
+  return f.uri;
 }
 
-/** The finished lines from the start (up to the first one not made yet), joined with their pauses. */
+/** The finished lines from the start (up to the first one not made yet), joined natively with their pauses. */
 async function doneSoFarWav(job: ScriptJob): Promise<{ uri: string; lines: number } | null> {
-  const pieces: Float32Array[] = [];
+  const files: string[] = [];
   let lines = 0;
   for (let i = 0; i < job.parts.length && partFile(job, i).exists; i++) {
-    pieces.push(await readFloats(partFile(job, i)));
+    files.push(partFile(job, i).uri);
     const pause = job.parts[i].pauseAfter ?? 0;
-    if (pause > 0) pieces.push(new Float32Array(Math.round(pause * 24000)));
+    if (pause > 0) {
+      const gap = new File(Paths.cache, `swaram-gap-${Math.round(pause * 10)}.f32`);
+      if (!gap.exists) writeFloats(gap, new Float32Array(Math.round(pause * 24000)));
+      files.push(gap.uri);
+    }
     lines++;
   }
   if (!lines) return null;
-  const all = new Float32Array(pieces.reduce((n, x) => n + x.length, 0));
-  let o = 0;
-  for (const x of pieces) {
-    all.set(x, o);
-    o += x.length;
+  const f = new File(Paths.cache, `swaram-sofar-${job.id}-${lines}.wav`);
+  if (!f.exists) {
+    if (SwaramEdge) await SwaramEdge.joinWav(files, f.uri, 0);
+    else return null;
   }
-  const f = new File(Paths.cache, `swaram-sofar-${job.id}.wav`);
-  if (f.exists) f.delete();
-  f.writeSync(encodeWav(all));
   return { uri: f.uri, lines };
 }
 
@@ -602,6 +603,8 @@ function JobLines({ job }: { job: ScriptJob }) {
   const [, setTick] = useState(0);
   const isRunning = app.running?.job.id === job.id;
   const [soFarUri, setSoFarUri] = useState<string | null>(null);
+  const [loadingLine, setLoadingLine] = useState<number | null>(null);
+  const [lineUri, setLineUri] = useState<Record<number, string>>({});
   const soFarPlaying = soFarUri ? player.isPlaying(soFarUri) : false;
   const firstMissing = job.parts.findIndex((_, i) => !partFile(job, i).exists);
   const speakers = [...new Set(job.parts.map((p) => p.speaker).filter(Boolean))] as string[];
@@ -677,13 +680,20 @@ function JobLines({ job }: { job: ScriptJob }) {
               <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
                 {has && !editing && (
                   <Button
-                    title="Play"
-                    icon="play"
+                    title={lineUri[i] && player.isPlaying(lineUri[i]) ? 'Pause' : 'Play'}
+                    icon={lineUri[i] && player.isPlaying(lineUri[i]) ? 'pause' : 'play'}
                     kind="secondary"
                     small
+                    busy={loadingLine === i}
                     onPress={async () => {
-                      const uri = await partWav(job, i);
-                      await player.toggle(uri);
+                      setLoadingLine(i);
+                      try {
+                        const uri = await partWav(job, i);
+                        setLineUri((m) => ({ ...m, [i]: uri }));
+                        await player.toggle(uri);
+                      } finally {
+                        setLoadingLine(null);
+                      }
                     }}
                   />
                 )}

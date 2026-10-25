@@ -14,6 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -30,6 +31,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.Random
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 private const val N_MELS = 100
 private const val HOP = 256
@@ -89,6 +92,26 @@ class SwaramEdgeModule : Module() {
     }
   }
 
+  // Expo runs every module's async calls on one shared thread, so a 30-second generation would
+  // hold up file reads and playback everywhere in the app. Heavy work runs on our own threads:
+  // the model on one, audio tools on another, so playing a finished line never waits for generation.
+  private val modelPool: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "swaram-model") }
+  private val toolPool: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "swaram-tools") }
+
+  private fun off(pool: ExecutorService, promise: Promise, block: () -> Any?) {
+    pool.execute {
+      try {
+        val r = block()
+        promise.resolve(if (r is Unit) null else r)
+      } catch (t: CodedException) {
+        promise.reject(t)
+      } catch (t: Throwable) {
+        trail("failed: $t")
+        promise.reject(EdgeException(t.message ?: t.toString(), t))
+      }
+    }
+  }
+
   override fun definition() = ModuleDefinition {
     Name("SwaramEdge")
     Events("onProgress")
@@ -117,7 +140,8 @@ class SwaramEdgeModule : Module() {
     /** Text describing how the app last ended, if that was a crash; else null. Shown once. */
     Function("crashReport") { crashReport() }
 
-    AsyncFunction("load") { dir: String, threads: Int, provider: String ->
+    AsyncFunction("load") { dir: String, threads: Int, provider: String, promise: Promise ->
+      off(modelPool, promise) {
       synchronized(lock) {
         releaseSessions()
         val t0 = SystemClock.elapsedRealtime()
@@ -157,13 +181,15 @@ class SwaramEdgeModule : Module() {
         (SystemClock.elapsedRealtime() - t0).toDouble()
       }
     }
+    }
 
     AsyncFunction("release") {
       synchronized(lock) { releaseSessions() }
     }
 
     /** wavPath: float32 samples (24 kHz mono). Writes the log-mel (frames x 100) to melPath. Returns frames. */
-    AsyncFunction("computeMel") { wavPath: String, melPath: String ->
+    AsyncFunction("computeMel") { wavPath: String, melPath: String, promise: Promise ->
+      off(modelPool, promise) {
       synchronized(lock) {
         val e = env ?: throw EdgeException("Model not loaded")
         val session = mel ?: throw EdgeException("Model not loaded")
@@ -190,13 +216,15 @@ class SwaramEdgeModule : Module() {
         }
       }
     }
+    }
 
     /**
      * Full generation for one chunk. refMelPath holds the voice's mel
      * (refFrames x 100); the generated audio is written to outPath as
      * float32 samples. Returns timings in ms and the sample count.
      */
-    AsyncFunction("synthesize") { ids: List<Int>, refMelPath: String, schedule: List<Double>, outPath: String, opts: SynthOptions ->
+    AsyncFunction("synthesize") { ids: List<Int>, refMelPath: String, schedule: List<Double>, outPath: String, opts: SynthOptions, promise: Promise ->
+      off(modelPool, promise) {
       synchronized(lock) {
         try {
           synthesize(ids, refMelPath, schedule, outPath, opts)
@@ -208,9 +236,11 @@ class SwaramEdgeModule : Module() {
         }
       }
     }
+    }
 
     /** Loads a personal voice model (once per path). Returns load time in ms. */
-    AsyncFunction("piperLoad") { modelPath: String, threads: Int ->
+    AsyncFunction("piperLoad") { modelPath: String, threads: Int, promise: Promise ->
+      off(modelPool, promise) {
       synchronized(piperLock) {
         val path = pathOf(modelPath)
         if (piperSessions.containsKey(path)) return@synchronized 0.0
@@ -234,9 +264,11 @@ class SwaramEdgeModule : Module() {
         (SystemClock.elapsedRealtime() - t0).toDouble()
       }
     }
+    }
 
     /** Phoneme ids -> float32 audio at the model's rate in outPath. Returns samples. */
-    AsyncFunction("piperSynth") { modelPath: String, ids: List<Int>, noiseScale: Double, lengthScale: Double, noiseW: Double, outPath: String ->
+    AsyncFunction("piperSynth") { modelPath: String, ids: List<Int>, noiseScale: Double, lengthScale: Double, noiseW: Double, outPath: String, promise: Promise ->
+      off(modelPool, promise) {
       synchronized(piperLock) {
         val session = piperSessions[pathOf(modelPath)] ?: throw EdgeException("Personal voice not loaded")
         val e = env ?: throw EdgeException("Personal voice not loaded")
@@ -265,12 +297,14 @@ class SwaramEdgeModule : Module() {
         }
       }
     }
+    }
 
     /**
      * Copies a file into the phone's Downloads/Swaram folder (visible in the
      * Files app). Returns where it went.
      */
-    AsyncFunction("saveToDownloads") { src: String, displayName: String, mime: String ->
+    AsyncFunction("saveToDownloads") { src: String, displayName: String, mime: String, promise: Promise ->
+      off(toolPool, promise) {
       val ctx = appCtx
       val from = File(pathOf(src))
       if (!from.exists()) throw EdgeException("The audio file is missing")
@@ -305,9 +339,11 @@ class SwaramEdgeModule : Module() {
       }
       "Downloads/Swaram/$displayName"
     }
+    }
 
     /** Extracts a zip into destDir. Returns the file names. */
-    AsyncFunction("unzip") { zipPath: String, destDir: String ->
+    AsyncFunction("unzip") { zipPath: String, destDir: String, promise: Promise ->
+      off(toolPool, promise) {
       val dest = File(pathOf(destDir)).apply { mkdirs() }
       val names = mutableListOf<String>()
       java.util.zip.ZipInputStream(File(pathOf(zipPath)).inputStream().buffered()).use { zin ->
@@ -326,9 +362,11 @@ class SwaramEdgeModule : Module() {
       }
       names
     }
+    }
 
     /** Writes files (paths) into a zip under the given names. */
-    AsyncFunction("zip") { paths: List<String>, names: List<String>, outPath: String ->
+    AsyncFunction("zip") { paths: List<String>, names: List<String>, outPath: String, promise: Promise ->
+      off(toolPool, promise) {
       java.util.zip.ZipOutputStream(File(pathOf(outPath)).outputStream().buffered()).use { zout ->
         for ((i, path) in paths.withIndex()) {
           zout.putNextEntry(java.util.zip.ZipEntry(names[i]))
@@ -338,9 +376,11 @@ class SwaramEdgeModule : Module() {
       }
       Unit
     }
+    }
 
     /** Any audio file Android can play -> mono float32 at 24 kHz in outPath. Returns samples. */
-    AsyncFunction("decodeAudio") { src: String, outPath: String, maxSeconds: Double ->
+    AsyncFunction("decodeAudio") { src: String, outPath: String, maxSeconds: Double, promise: Promise ->
+      off(toolPool, promise) {
       try {
         AudioTools.decodeToMono24k(pathOf(src), File(pathOf(outPath)), maxSeconds)
       } catch (t: Throwable) {
@@ -348,9 +388,11 @@ class SwaramEdgeModule : Module() {
         throw EdgeException("Could not read this audio file: ${t.message}", t)
       }
     }
+    }
 
     /** Music (any audio file, looped) under a voice WAV, with ducking and fades. Returns samples. */
-    AsyncFunction("mixMusic") { voiceWav: String, music: String, outWav: String, gain: Double, duck: Boolean, fadeSec: Double ->
+    AsyncFunction("mixMusic") { voiceWav: String, music: String, outWav: String, gain: Double, duck: Boolean, fadeSec: Double, promise: Promise ->
+      off(toolPool, promise) {
       try {
         AudioFx.mixMusic(File(pathOf(voiceWav)), pathOf(music), File(pathOf(outWav)), gain.toFloat(), duck, fadeSec.toFloat(), appCtx.cacheDir).toDouble()
       } catch (t: Throwable) {
@@ -358,14 +400,18 @@ class SwaramEdgeModule : Module() {
         throw EdgeException("Could not add the music: ${t.message}", t)
       }
     }
+    }
 
     /** Reduces steady background noise in a float32 file. Returns samples. */
-    AsyncFunction("denoise") { inPath: String, outPath: String, strength: Double ->
+    AsyncFunction("denoise") { inPath: String, outPath: String, strength: Double, promise: Promise ->
+      off(toolPool, promise) {
       AudioFx.denoise(File(pathOf(inPath)), File(pathOf(outPath)), strength.toFloat()).toDouble()
+    }
     }
 
     /** A video with its sound replaced by the given .m4a. Returns the video length in microseconds. */
-    AsyncFunction("muxVideo") { video: String, audioM4a: String, outMp4: String ->
+    AsyncFunction("muxVideo") { video: String, audioM4a: String, outMp4: String, promise: Promise ->
+      off(toolPool, promise) {
       try {
         AudioFx.muxVideo(pathOf(video), pathOf(audioM4a), File(pathOf(outMp4))).toDouble()
       } catch (t: Throwable) {
@@ -373,9 +419,11 @@ class SwaramEdgeModule : Module() {
         throw EdgeException("Could not make the video: ${t.message}", t)
       }
     }
+    }
 
     /** 16-bit WAV -> AAC .m4a (much smaller). Returns samples. */
-    AsyncFunction("encodeM4a") { wavPath: String, outPath: String, bitrate: Int ->
+    AsyncFunction("encodeM4a") { wavPath: String, outPath: String, bitrate: Int, promise: Promise ->
+      off(toolPool, promise) {
       try {
         AudioTools.encodeM4a(File(pathOf(wavPath)), File(pathOf(outPath)), bitrate).toDouble()
       } catch (t: Throwable) {
@@ -383,10 +431,13 @@ class SwaramEdgeModule : Module() {
         throw EdgeException("Could not make the M4A file: ${t.message}", t)
       }
     }
+    }
 
     /** Joins float32 part files into one 16-bit WAV with short cross-fades. Returns samples. */
-    AsyncFunction("joinWav") { parts: List<String>, outPath: String, fadeSamples: Int ->
+    AsyncFunction("joinWav") { parts: List<String>, outPath: String, fadeSamples: Int, promise: Promise ->
+      off(toolPool, promise) {
       AudioTools.joinToWav(parts.map { File(pathOf(it)) }, File(pathOf(outPath)), fadeSamples).toDouble()
+    }
     }
 
     Function("startBackground") { title: String, text: String ->
