@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { usePlayer } from '../components/player';
 import { ReadAs } from '../components/ReadAs';
 import { Badge, Button, Card, CardTitle, Chip, Empty, Icon, IconButton, Notice, ProgressBar, Screen } from '../components/ui';
 import { downloadAudio, shareAudio } from '../download';
-import { ago, duration, type RecentItem, removeRecent } from '../edge/recent';
+import { ago, clearRecent, duration, isProjectAudio, type RecentItem, removeRecent } from '../edge/recent';
 import { displayName, keyOf } from '../edge/voices';
 import { languageByCode } from '../languages';
 import { useApp } from '../state';
@@ -37,12 +37,26 @@ export function RecentRow({ item, onRemoved }: { item: RecentItem; onRemoved?: (
       <IconButton icon="share-2" label="Share" onPress={() => void shareAudio(item.uri)} />
       {onRemoved && (
         <IconButton
-          icon="x"
-          label="Remove from recent"
-          onPress={() => {
-            removeRecent(item.id);
-            onRemoved();
-          }}
+          icon="trash-2"
+          label="Delete"
+          onPress={() =>
+            Alert.alert(
+              'Delete this audio?',
+              isProjectAudio(item) ? 'It’s removed from Recent. The project stays in Studio.' : 'It’s deleted from the phone. Saved downloads are kept.',
+              [
+                { text: 'Keep' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () => {
+                    if (player.isPlaying(item.uri)) player.stop();
+                    removeRecent(item.id);
+                    onRemoved();
+                  },
+                },
+              ],
+            )
+          }
         />
       )}
     </View>
@@ -194,11 +208,34 @@ export function HomeScreen() {
       <View style={{ gap: space.sm }}>
         <CardTitle
           right={
-            recent.length > 3 ? (
-              <Pressable accessibilityRole="button" onPress={() => setShowAll(!showAll)}>
-                <Text style={{ color: t.accent, fontFamily: font.bold, fontSize: 13 }}>{showAll ? 'Show less' : `See all (${recent.length})`}</Text>
-              </Pressable>
-            ) : undefined
+            <View style={{ flexDirection: 'row', gap: space.lg }}>
+              {recent.length > 1 && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    Alert.alert('Delete all recent audio?', 'Quick lines are deleted from the phone. Studio projects and saved downloads are kept.', [
+                      { text: 'Keep' },
+                      {
+                        text: 'Delete all',
+                        style: 'destructive',
+                        onPress: () => {
+                          player.stop();
+                          clearRecent();
+                          app.refreshRecent();
+                        },
+                      },
+                    ])
+                  }
+                >
+                  <Text style={{ color: t.danger, fontFamily: font.bold, fontSize: 13 }}>Delete all</Text>
+                </Pressable>
+              )}
+              {recent.length > 3 && (
+                <Pressable accessibilityRole="button" onPress={() => setShowAll(!showAll)}>
+                  <Text style={{ color: t.accent, fontFamily: font.bold, fontSize: 13 }}>{showAll ? 'Show less' : `See all (${recent.length})`}</Text>
+                </Pressable>
+              )}
+            </View>
           }
         >
           Recent
@@ -206,7 +243,7 @@ export function HomeScreen() {
         {recent.length === 0 ? (
           <Notice text="Everything you make shows up here, ready to play, download or share." />
         ) : (
-          (showAll ? recent : recent.slice(0, 3)).map((r) => <RecentRow key={r.id} item={r} onRemoved={showAll ? app.refreshRecent : undefined} />)
+          (showAll ? recent : recent.slice(0, 3)).map((r) => <RecentRow key={r.id} item={r} onRemoved={app.refreshRecent} />)
         )}
       </View>
     </Screen>

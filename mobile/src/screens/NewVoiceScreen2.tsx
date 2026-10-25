@@ -176,6 +176,7 @@ export function NewVoiceScreen2() {
   return (
     <Screen>
       <Header title="New voice" onBack={() => app.setPage(null)} />
+      <Notice text="Free and fully offline. Read one line, tap Create voice, and it's ready in about a minute." />
       {!app.installed && <Notice text="The offline model isn't downloaded yet. Download it in Settings (about 450 MB) before creating a voice." kind="error" />}
       <Card>
         <Field label="Name" value={name} onChangeText={setName} placeholder="e.g. Amma" maxLength={40} hint="In multi-voice scripts, write this name before a line to use this voice." />

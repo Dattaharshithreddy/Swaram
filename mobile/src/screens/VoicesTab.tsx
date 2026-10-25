@@ -27,6 +27,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
   const player = usePlayer();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [extras, setExtras] = useState(false);
   const lang = languageByCode(v.voice.language);
   const training = v.kind === 'f5' ? app.trainings.find((x) => x.voiceId === v.voice.id || (!x.voiceId && x.voiceName === v.voice.name)) : undefined;
   const hasFastTwin = v.kind === 'f5' && app.voices.some((o) => o.kind === 'fast' && o.voice.name.toLowerCase() === v.voice.name.toLowerCase());
@@ -89,6 +90,12 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
           <Icon name="trash-2" size={18} color={t.faint} />
         </Pressable>
       </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: t.surface2, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
+        <Icon name="check-circle" size={16} color={t.ok} />
+        <Text style={{ color: t.chipText, fontFamily: font.medium, fontSize: 13, flex: 1 }}>
+          {v.kind === 'fast' ? 'Ready to use. Speaks in about a second, offline.' : 'Ready to use. Free and works offline. Takes about 30 s per line.'}
+        </Text>
+      </View>
 
       {training?.state === 'running' && (
         <View style={{ gap: 6 }}>
@@ -120,7 +127,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
 
       <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
         {rec && (
-          <Button title={player.isPlaying(rec) ? 'Pause' : 'Recording'} icon={player.isPlaying(rec) ? 'pause' : 'play'} kind="secondary" small style={{ flex: 1 }} onPress={() => void player.toggle(rec)} />
+          <Button title={player.isPlaying(rec) ? 'Pause' : 'Sample'} icon={player.isPlaying(rec) ? 'pause' : 'play'} kind="secondary" small style={{ flex: 1 }} onPress={() => void player.toggle(rec)} />
         )}
         <Button
           title="Share"
@@ -150,6 +157,22 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
         />
       </View>
       {v.kind === 'f5' && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: extras }}
+          onPress={() => setExtras(!extras)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}
+        >
+          <Icon name="sliders" size={15} color={t.soft} />
+          <Text style={{ color: t.soft, fontFamily: font.semibold, fontSize: 13, flex: 1 }}>
+            Optional extras{!extras ? ' · emotions, faster speaking' : ''}
+          </Text>
+          <Icon name={extras ? 'chevron-up' : 'chevron-down'} size={18} color={t.soft} />
+        </Pressable>
+      )}
+      {extras && (
+        <View style={{ gap: space.md, borderTopWidth: 1, borderTopColor: t.line, paddingTop: space.md }}>
+      {v.kind === 'f5' && (
         <View style={{ gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <Text style={{ color: t.soft, fontFamily: font.semibold, fontSize: 12 }}>Emotions:</Text>
@@ -160,14 +183,22 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
             ))}
             {!EMOTIONS.some((e) => v.voice.emotions?.[e]) && <Text style={{ color: t.faint, fontFamily: font.regular, fontSize: 12 }}>normal tone only</Text>}
           </View>
-          <Button title="Add emotions (happy, sad, angry…)" icon="smile" kind="secondary" small onPress={() => app.setPage({ name: 'emotion', voiceId: v.voice.id })} />
+          <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12, lineHeight: 18 }}>Record the same voice sounding happy, sad, angry… so scripts can use those tones. Without this, emotions are imitated.</Text>
+          <Button title="Add emotions" icon="smile" kind="secondary" small onPress={() => app.setPage({ name: 'emotion', voiceId: v.voice.id })} />
         </View>
       )}
       {v.kind === 'fast' && (v.voice.emotions?.length ?? 0) > 0 && (
         <Notice text={`Knows: ${(v.voice.emotions ?? []).map((e) => EMOTION_INFO[e as keyof typeof EMOTION_INFO]?.label ?? e).join(', ')}`} />
       )}
       {v.kind === 'f5' && rec && !hasFastTwin && training?.state !== 'running' && (
-        <Button title="Make it fast (free, ~4 h on Kaggle)" icon="zap" kind="gold" small busy={busy} onPress={makeFast} />
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12, lineHeight: 18 }}>
+            Optional. Your voice already works without this. It trains a copy that speaks in about 1 second instead of about 30. Free, runs about 4 hours on Kaggle (needs a free Kaggle account).
+          </Text>
+          <Button title="Make it fast" icon="zap" kind="gold" small busy={busy} onPress={makeFast} />
+        </View>
+      )}
+        </View>
       )}
       {v.kind === 'f5' && !rec && <Notice text="Made before recordings were saved: create it again to play its recording or make it fast." />}
       {error && <Notice text={error} kind="error" />}
@@ -223,6 +254,26 @@ export function VoicesTab() {
         subtitle="Saved only on this phone"
         right={<Button title="New voice" icon="plus" small onPress={() => app.setPage({ name: 'newVoice' })} style={{ minHeight: 44 }} />}
       />
+      <Card>
+        <Text style={{ color: t.ink, fontFamily: font.bold, fontSize: 15 }}>How it works</Text>
+        {[
+          ['mic', 'Tap New voice and read one line aloud (5-8 seconds), or upload a voice note.'],
+          ['edit-3', 'Type anything in Home or Studio.'],
+          ['volume-2', 'It speaks in that voice.'],
+        ].map(([icon, text], i) => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: t.surface2, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name={icon as 'mic'} size={15} color={t.accent} />
+            </View>
+            <Text style={{ color: t.chipText, fontFamily: font.medium, fontSize: 13, flex: 1 }}>{text}</Text>
+          </View>
+        ))}
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+          <Badge text="Free" kind="ok" icon="check" />
+          <Badge text="Works offline" kind="ok" icon="wifi-off" />
+          <Badge text="No account needed" kind="ok" icon="user-x" />
+        </View>
+      </Card>
       {app.voices.length === 0 ? (
         <Card>
           <Empty
@@ -239,7 +290,7 @@ export function VoicesTab() {
         <Button title="Import a shared voice (.zip)" icon="download" kind="secondary" onPress={importFast} />
         <Notice text="Voices are shared as a file with Share on a voice card. Only share voices you have permission for." />
         <Pressable accessibilityRole="button" onPress={exportOne} style={{ alignSelf: 'center', padding: 8 }}>
-          <Text style={{ color: t.soft, fontFamily: font.semibold, fontSize: 13 }}>Export a recording for training by hand</Text>
+          <Text style={{ color: t.soft, fontFamily: font.semibold, fontSize: 13 }}>Advanced: export a recording for your own training</Text>
         </Pressable>
         {error && <Notice text={error} kind="error" />}
       </View>

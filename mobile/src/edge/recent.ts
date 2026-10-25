@@ -32,8 +32,31 @@ export function addRecent(item: Omit<RecentItem, 'id' | 'at'>): RecentItem {
   return r;
 }
 
+/** A finished script's audio belongs to its Studio project, so only quick lines lose their file. */
+export function isProjectAudio(r: RecentItem): boolean {
+  return r.uri.includes('/edge-jobs/');
+}
+
+function dropFile(r: RecentItem) {
+  if (isProjectAudio(r)) return;
+  try {
+    const f = new File(r.uri);
+    if (f.exists) f.delete();
+  } catch {
+    // already gone
+  }
+}
+
+/** Removes an item from Recent and deletes its audio from the phone. */
 export function removeRecent(id: string) {
-  file().writeSync(JSON.stringify(listRecent().filter((r) => r.id !== id)));
+  const all = listRecent();
+  all.filter((r) => r.id === id).forEach(dropFile);
+  file().writeSync(JSON.stringify(all.filter((r) => r.id !== id)));
+}
+
+export function clearRecent() {
+  listRecent().forEach(dropFile);
+  file().writeSync('[]');
 }
 
 export function ago(at: number): string {
