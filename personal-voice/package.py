@@ -59,7 +59,27 @@ def main() -> None:
     model = out / "model.onnx"
     env = dict(os.environ, PYTHONPATH=f"{Path(args.piper).resolve() / 'src'}:{os.environ.get('PYTHONPATH', '')}")
     subprocess.run(
-        [sys.executable, "-m", "piper.train.export_onnx", "--checkpoint", str(ckpt), "--output-file", str(model)],
+        # Newer PyTorch (as on Kaggle) exports with torch.export by default, which fails on
+        # Piper's model; use the classic exporter the phone's ONNX Runtime was tested with.
+        [
+            sys.executable,
+            "-c",
+            "import sys, runpy, torch; e = torch.onnx.export\n"
+            "def classic(*a, **k):\n"
+            "    k.setdefault('dynamo', False)\n"
+            "    try:\n"
+            "        return e(*a, **k)\n"
+            "    except TypeError:\n"
+            "        k.pop('dynamo', None)\n"
+            "        return e(*a, **k)\n"
+            "torch.onnx.export = classic\n"
+            "sys.argv = ['export_onnx'] + sys.argv[1:]\n"
+            "runpy.run_module('piper.train.export_onnx', run_name='__main__')",
+            "--checkpoint",
+            str(ckpt),
+            "--output-file",
+            str(model),
+        ],
         check=True,
         env=env,
     )
