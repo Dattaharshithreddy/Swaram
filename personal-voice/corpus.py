@@ -23,7 +23,12 @@ def clean(s: str) -> str | None:
 
 
 def everyday() -> list[str]:
-    return [line.strip() for line in (Path(__file__).parent / "everyday.txt").read_text("utf-8").splitlines() if line.strip()]
+    """Built-in conversational lines: everyday.txt plus the studio-voice reading list."""
+    out: list[str] = []
+    for f in (Path(__file__).parent / "everyday.txt", Path(__file__).parent.parent / "cloud" / "pro_sentences.txt"):
+        if f.exists():
+            out += [line.strip() for line in f.read_text("utf-8").splitlines() if line.strip()]
+    return list(dict.fromkeys(out))
 
 
 def wikipedia(n: int, seed: int = 0) -> list[str]:
@@ -44,11 +49,29 @@ def wikipedia(n: int, seed: int = 0) -> list[str]:
     return out[:n]
 
 
-def sentences(n: int, seed: int = 0) -> list[str]:
+def sentences(n: int, seed: int = 0, timeout: float = 900) -> list[str]:
     base = everyday()
-    try:
-        extra = wikipedia(max(0, n - len(base)), seed)
-    except Exception as e:  # offline tests: everyday lines only
-        print(f"Wikipedia not available ({e}); using built-in sentences only")
+    if n <= len(base):
+        return base[:n]
+    # Wikipedia streaming can hang; give it a time limit (a daemon thread, so a stuck
+    # download can't keep the script from exiting) and fall back to the built-in lines.
+    import threading
+
+    box: dict[str, object] = {}
+
+    def fetch() -> None:
+        try:
+            box["ok"] = wikipedia(n - len(base), seed)
+        except Exception as e:  # offline tests: built-in lines only
+            box["err"] = e
+
+    th = threading.Thread(target=fetch, daemon=True)
+    th.start()
+    th.join(timeout)
+    if "ok" in box:
+        extra = box["ok"]  # type: ignore[assignment]
+    else:
+        why = box.get("err") or f"took over {timeout:.0f} s"
+        print(f"Wikipedia not available ({why}); using {len(base)} built-in sentences only", flush=True)
         extra = []
     return (base + extra)[:n]
