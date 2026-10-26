@@ -164,9 +164,9 @@ export async function fetchTemplate(): Promise<{ cells: { cell_type: string; sou
   return res.json();
 }
 
-/** quick: about 1.5 h on Kaggle, a little rougher; best: about 3 h. */
+/** quick: about 1.5 h on Kaggle, a little rougher; best: about 3.5 h. */
 export type TrainingMode = 'quick' | 'best';
-export const TRAINING_HOURS: Record<TrainingMode, number> = { quick: 1.5, best: 3 };
+export const TRAINING_HOURS: Record<TrainingMode, number> = { quick: 1.5, best: 3.5 };
 
 /** The training notebook with the voice and Hugging Face token filled in (the notebook is private). */
 export function trainingNotebook(

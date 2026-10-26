@@ -57,7 +57,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
   function chooseFast() {
     Alert.alert('How fast should training be?', 'Both are free on Kaggle. You can close the app; the fast voice appears here when it is done.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Best quality · ~3 h', onPress: () => void makeFast('best') },
+      { text: 'Best quality · ~3.5 h', onPress: () => void makeFast('best') },
       { text: 'Quick · ~1.5 h', onPress: () => void makeFast('quick') },
     ]);
   }
@@ -277,7 +277,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
       {v.kind === 'f5' && rec && !hasFastTwin && training?.state !== 'running' && (
         <View style={{ gap: 6 }}>
           <Text style={{ color: t.soft, fontFamily: font.regular, fontSize: 12, lineHeight: 18 }}>
-            Optional. Your voice already works without this. It trains a copy that speaks in about 1 second instead of about 30. Free on Kaggle: Quick takes about 1.5 hours, Best quality about 3 (needs a free Kaggle account).
+            Optional. Your voice already works without this. It trains a copy that speaks in about 1 second instead of about 30. Free on Kaggle: Quick takes about 1.5 hours, Best quality about 3.5 (needs a free Kaggle account).
           </Text>
           <Button title="Make it fast" icon="zap" kind="gold" small busy={busy} onPress={chooseFast} />
         </View>

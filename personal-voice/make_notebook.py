@@ -16,13 +16,13 @@ about 20 times faster than real time, offline.
    **+ Add Input → Upload → New Dataset**.
 2. **Settings → Accelerator → GPU T4 x2**, and **Internet → On**.
 3. **Add-ons → Secrets**: a secret named `HF_TOKEN` with your Hugging Face token, switched on for this notebook.
-4. Click **Save Version → Save & Run All (Commit)**. It runs in the background for about 3 hours (MODE = \"quick\": about 1.5);
+4. Click **Save Version → Save & Run All (Commit)**. It runs in the background for about 3.5 hours (MODE = \"quick\": about 1.5);
    you can close the browser.
 
 **After:** open the saved version → **Output** → download `swaram-voice-….zip` (about 60 MB) to your
 phone, then in the app: Offline → **Import personal voice**. Listen to `samples/` first if you like."""),
     ("code", """# Settings (the defaults are fine)
-MODE = "best"         # "quick" (about 1.5 hours in total) or "best" (about 3 hours)
+MODE = "best"         # "quick" (about 1.5 hours in total) or "best" (about 3.5 hours)
 SENTENCES = None      # how much training speech to make (None = the mode's amount)
 TRAIN_HOURS = None    # training time (None = the mode's); more = a bit better
 STEPS = None          # quality of the training speech, big model steps (None = the mode's)
@@ -47,7 +47,7 @@ sh(f"git clone -q --depth 1 https://github.com/AI4Bharat/IndicF5.git {{WORK}}/In
 sh(f"git clone -q https://github.com/OHF-Voice/piper1-gpl.git {{WORK}}/piper || true")
 sh(f"cd {{WORK}}/piper && git checkout -q {PIPER_COMMIT}")
 sh("pip install -q x-transformers torchdiffeq vocos==0.1.0 einops jieba pypinyin ema-pytorch onnx onnxruntime pathvalidate "
-   "'lightning>=2,<3' 'jsonargparse[signatures]>=4.27.7' tensorboardX 'pysilero-vad>=2.1,<3' 'cython>=3,<4'")
+   "'lightning>=2,<3' 'jsonargparse[signatures]>=4.27.7' tensorboardX 'pysilero-vad>=2.1,<3' 'cython>=3,<4' onnxscript")
 sh(f"cd {{WORK}}/piper && bash build_monotonic_align.sh")
 PV = f"{{WORK}}/Swaram/personal-voice"
 os.environ["PYTHONPATH"] = f"{{WORK}}/IndicF5:{{WORK}}/Swaram/edge"
@@ -86,8 +86,8 @@ assert ref_text, "Set REF_TEXT (exactly what is said in the recording) in the se
 name = name or "My voice"
 print("Voice:", name, "|", ref_wav, "|", ref_text)
 print("Emotions:", ", ".join(emotion_refs) or "none (normal tone only)")
-# Both modes train on both GPUs. Quick makes less, slightly rougher training speech and trains for less time.
-PRESETS = {"quick": (700, 16, 0.9), "best": (1500, 32, 2.0)}
+# Quick makes less, slightly rougher training speech and trains for less time.
+PRESETS = {"quick": (700, 16, 1.0), "best": (1500, 32, 2.5)}
 p_sent, p_steps, p_hours = PRESETS.get(MODE, PRESETS["best"])
 SENTENCES, STEPS, TRAIN_HOURS = SENTENCES or p_sent, STEPS or p_steps, TRAIN_HOURS or p_hours
 print(f"Mode: {MODE} | {SENTENCES} sentences, {STEPS} steps, {TRAIN_HOURS} h training")
@@ -122,7 +122,7 @@ def train(devices, hours):
                         f"--hours {hours} --batch 16 --devices {devices} 2>&1 | grep -v Warning | tail -n 40",
                         shell=True, executable="/bin/bash").returncode
     return rc, (time.time() - t0) / 3600
-gpus = max(1, torch.cuda.device_count())
+gpus = 1  # two-GPU training fails in Piper's trainer on Kaggle (rank 1 assertion); generation still uses both
 rc, took = train(gpus, TRAIN_HOURS)
 ckpts = glob.glob(f"{TRAIN}/**/*.ckpt", recursive=True)
 if rc != 0 and gpus > 1 and not ckpts:
