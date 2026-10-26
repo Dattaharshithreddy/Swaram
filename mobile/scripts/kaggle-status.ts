@@ -20,7 +20,7 @@ const res = await fetch('https://api.kaggle.com/v1/kernels.KernelsApiService/Lis
 const data = (await res.json()) as { kernels?: { ref?: string; title?: string; lastRunTime?: string }[] };
 for (const k of data.kernels ?? []) {
   const slug = (k.ref ?? '').split('/')[1];
-  if (!slug || /check/.test(slug)) continue;
+  if (!slug || (/check/.test(slug) && slug !== 'swaram-voice-check')) continue;
   const s = await runStatus(auth, slug).catch((e) => ({ state: `? ${e}` }));
   let files = '';
   if (s.state === 'error') {
@@ -30,6 +30,11 @@ for (const k of data.kernels ?? []) {
     const all = (out.log ?? '').split('\n').map((l) => { try { return (JSON.parse(l.replace(/^,/, '')) as { data: string }).data.trimEnd(); } catch { return ''; } }).filter(Boolean);
     const at = all.findIndex((l) => l.includes('IndexError') || l.includes('Error:'));
     if (at >= 0) console.log(`--- ${slug} context ---\n${all.slice(Math.max(0, at - 45), at + 3).join('\n')}`);
+  }
+  if (slug === 'swaram-voice-check' && s.state !== 'running') {
+    const o = await runOutputs(auth, slug).catch(() => ({ files: [], log: '' }));
+    const ls = (o.log ?? '').split('\n').map((l) => { try { return (JSON.parse(l.replace(/^,/, '')) as { data: string }).data.trimEnd(); } catch { return ''; } }).filter(Boolean);
+    console.log(`--- ${slug} ---\n${ls.filter((l) => /done, |clips|precision|Error|silent|Mode:|Reference|GPU|step|\$ /.test(l)).slice(-40).join('\n')}`);
   }
   if (s.state === 'complete') {
     const out = await runOutputs(auth, slug).catch(() => ({ files: [] as { fileName: string }[] }));
