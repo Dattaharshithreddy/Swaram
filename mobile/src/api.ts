@@ -4,7 +4,7 @@
  * The phone never runs a voice model. It uploads recordings, asks the server
  * to clone and speak, and saves the returned audio.
  */
-import { File, Paths } from 'expo-file-system';
+import { File, Paths, UploadType } from 'expo-file-system';
 import type { LanguageCode } from './languages';
 
 export interface ServerConfig {
@@ -74,8 +74,23 @@ export class ApiError extends Error {
   }
 }
 
-function normalizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, '');
+/**
+ * The server's base address. Forgives a pasted page address such as
+ * ".../health" or ".../docs" and trailing slashes, which otherwise send every
+ * request to the web app's page instead of the API.
+ */
+export function normalizeUrl(url: string): string {
+  let u = url.trim().replace(/\s+/g, '');
+  if (u && !/^https?:\/\//i.test(u)) u = `https://${u}`;
+  u = u.replace(/[?#].*$/, '');
+  u = u.replace(/\/+$/, '');
+  u = u.replace(/\/(health|docs|mcp|openapi\.json)(\/.*)?$/i, '');
+  return u.replace(/\/+$/, '');
+}
+
+function networkMessage(err: unknown): string {
+  const detail = err instanceof Error && err.message ? ` (${err.message})` : '';
+  return `Could not reach the server${detail}. Is it running, and is the URL right (https://...)?`;
 }
 
 function headers(cfg: ServerConfig, extra: Record<string, string> = {}): Record<string, string> {
@@ -99,6 +114,68 @@ async function readError(res: Response): Promise<ApiError> {
   return new ApiError(message, res.status);
 }
 
+const NOT_API =
+  'The server answered with a web page instead of data. Check the Server URL is only https://….trycloudflare.com, with nothing after .com.';
+
+/** Turns a JSON body into a value, or explains why it isn't JSON. */
+function parseJson<T>(text: string, contentType: string | null): T {
+  if ((contentType ?? '').includes('text/html') || /^\s*</.test(text)) throw new ApiError(NOT_API, 200);
+  try {
+    return (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    throw new ApiError(`The server sent something unexpected: ${text.slice(0, 120)}`, 200);
+  }
+}
+
+/** file:// URI for a recording or picked file (some recorders return a bare path). */
+function fileUri(uri: string): string {
+  return uri.startsWith('/') ? `file://${uri}` : uri;
+}
+
+function mimeFor(uri: string): string {
+  const ext = (uri.split('?')[0].split('.').pop() || 'm4a').toLowerCase();
+  return ext === 'wav' ? 'audio/wav' : ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : 'audio/mp4';
+}
+
+/**
+ * Upload a local audio file as multipart form data with the native uploader.
+ * React Native's FormData file parts fail on some Android builds before the
+ * request ever reaches the server, so audio never goes through fetch.
+ */
+async function uploadFile<T>(cfg: ServerConfig, path: string, uri: string, parameters: Record<string, string>): Promise<T> {
+  if (!cfg.url) throw new ApiError('Add your server URL in Settings first.', 0);
+  const file = new File(fileUri(uri));
+  if (!file.exists) throw new ApiError('The recording is missing on this phone. Record or pick it again.', 0);
+  let res: { status: number; body: string; headers: Record<string, string> };
+  try {
+    res = await file.upload(normalizeUrl(cfg.url) + path, {
+      httpMethod: 'POST',
+      uploadType: UploadType.MULTIPART,
+      fieldName: 'file',
+      mimeType: mimeFor(uri),
+      parameters,
+      headers: headers(cfg),
+    });
+  } catch (err) {
+    throw new ApiError(`Could not upload the recording${err instanceof Error && err.message ? ` (${err.message})` : ''}.`, 0);
+  }
+  const contentType = Object.entries(res.headers ?? {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? null;
+  if (res.status === 401) throw new ApiError('Wrong or missing API key. Check Settings.', 401);
+  if (res.status < 200 || res.status >= 300) {
+    let message = `Server returned ${res.status}`;
+    try {
+      const body = JSON.parse(res.body);
+      const detail = body?.detail;
+      if (typeof detail === 'string') message = detail;
+      else if (Array.isArray(detail) && detail[0]?.msg) message = detail.map((d: { msg: string }) => d.msg).join('; ');
+    } catch {
+      // not JSON
+    }
+    throw new ApiError(message, res.status);
+  }
+  return parseJson<T>(res.body, contentType);
+}
+
 async function request<T>(cfg: ServerConfig, path: string, init: RequestInit = {}): Promise<T> {
   if (!cfg.url) throw new ApiError('Add your server URL in Settings first.', 0);
   let res: Response;
@@ -107,11 +184,11 @@ async function request<T>(cfg: ServerConfig, path: string, init: RequestInit = {
       ...init,
       headers: { ...headers(cfg), ...(init.headers as Record<string, string> | undefined) },
     });
-  } catch {
-    throw new ApiError('Could not reach the server. Is it running, and is the URL right (https://...)?', 0);
+  } catch (err) {
+    throw new ApiError(networkMessage(err), 0);
   }
   if (!res.ok) throw await readError(res);
-  return (await res.json()) as T;
+  return parseJson<T>(await res.text(), res.headers.get('content-type'));
 }
 
 /**
@@ -122,8 +199,8 @@ async function fetchAudio(cfg: ServerConfig, path: string, name: string): Promis
   let res: Response;
   try {
     res = await fetch(normalizeUrl(cfg.url) + path, { headers: headers(cfg, { Accept: '*/*' }) });
-  } catch {
-    throw new ApiError('Could not reach the server. Check your internet and the server URL.', 0);
+  } catch (err) {
+    throw new ApiError(networkMessage(err), 0);
   }
   if (!res.ok) throw await readError(res);
   if (!/\.[a-z0-9]+$/i.test(name)) {
@@ -157,17 +234,8 @@ export const api = {
     }),
 
   /** Speech-to-text for the reference clip, so the user only has to correct it. */
-  transcribe: async (cfg: ServerConfig, audioUri: string, language: LanguageCode) => {
-    const form = new FormData();
-    form.append('file', audioFilePart(audioUri) as unknown as Blob);
-    form.append('language', language);
-    form.append('model', 'turbo');
-    const res = await request<{ text: string; duration: number }>(cfg, '/transcribe', {
-      method: 'POST',
-      body: form,
-    });
-    return res;
-  },
+  transcribe: (cfg: ServerConfig, audioUri: string, language: LanguageCode) =>
+    uploadFile<{ text: string; duration: number }>(cfg, '/transcribe', audioUri, { language, model: 'turbo' }),
 
   /** Everything the server has made, newest first (includes audio Claude made). */
   listGenerations: async (cfg: ServerConfig, limit = 50) =>
@@ -250,12 +318,8 @@ export const api = {
       }),
     });
     try {
-      const form = new FormData();
-      form.append('file', audioFilePart(opts.audioUri) as unknown as Blob);
-      form.append('reference_text', opts.transcript);
-      await request<unknown>(cfg, `/profiles/${encodeURIComponent(profile.id)}/samples`, {
-        method: 'POST',
-        body: form,
+      await uploadFile<unknown>(cfg, `/profiles/${encodeURIComponent(profile.id)}/samples`, opts.audioUri, {
+        reference_text: opts.transcript,
       });
     } catch (err) {
       // Don't leave an empty voice behind if the sample upload failed.
@@ -279,8 +343,8 @@ export const api = {
           headers: headers(cfg, { 'Content-Type': 'application/json', Accept: '*/*' }),
           body: JSON.stringify({ model: 'tts-1', voice: voiceId, input: text, response_format: format }),
         });
-      } catch {
-        throw new ApiError('Could not reach the server. Check your internet and the server URL.', 0);
+      } catch (err) {
+        throw new ApiError(networkMessage(err), 0);
       }
       if (!res.ok) throw await readError(res);
       return { bytes: new Uint8Array(await res.arrayBuffer()), format };
@@ -300,14 +364,6 @@ export const api = {
     return file;
   },
 };
-
-/** React Native's FormData accepts {uri, name, type} objects for file uploads. */
-function audioFilePart(uri: string) {
-  const ext = (uri.split('?')[0].split('.').pop() || 'm4a').toLowerCase();
-  const type =
-    ext === 'wav' ? 'audio/wav' : ext === 'mp3' ? 'audio/mpeg' : ext === 'ogg' ? 'audio/ogg' : 'audio/mp4';
-  return { uri, name: `sample.${ext}`, type };
-}
 
 /** Engine model names the server must have downloaded before cloning works. */
 export const REQUIRED_MODELS = [

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { api, type ModelStatus, OPTIONAL_MODELS, type Quality, REQUIRED_MODELS, type ServerConfig } from '../api';
+import { api, type ModelStatus, normalizeUrl, OPTIONAL_MODELS, type Quality, REQUIRED_MODELS, type ServerConfig } from '../api';
 import { Body, Button, Card, Field, Label, Notice, Segmented, Title } from '../components/ui';
 import { space } from '../theme';
 import { friendlyError } from '../errors';
@@ -29,10 +29,12 @@ export function SettingsScreen({
     setBusy(true);
     setMessage(null);
     try {
-      if (!/^https:\/\//i.test(url.trim()) && !/^http:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url.trim())) {
+      const clean = normalizeUrl(url);
+      if (!/^https:\/\//i.test(clean) && !/^http:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(clean)) {
         throw new Error('Use the https:// address the setup script printed.');
       }
-      const saved = await onSave({ url, apiKey });
+      setUrl(clean);
+      const saved = await onSave({ url: clean, apiKey: apiKey.trim() });
       const health = await api.health(saved);
       await api.listVoices(saved); // proves the API key works
       setModels(await api.modelStatus(saved));
