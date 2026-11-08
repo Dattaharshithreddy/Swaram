@@ -6,11 +6,14 @@ works, with the same quality as a powerful PC. This guide sets that server up.
 
 ## 1. Rent a GPU server
 
-Any provider that gives you an **Ubuntu 22.04 or 24.04 machine with an NVIDIA
-GPU and the NVIDIA driver installed** works. Look for:
+Any provider that gives you an **Ubuntu 22.04 or 24.04 virtual machine with an
+NVIDIA GPU and the NVIDIA driver installed** works. It must be a full VM where
+you can install Docker: "pod" or "container" rentals (RunPod pods, Vast.ai,
+most notebook-style GPU services) can't run the setup script. Look for:
 
 - **GPU:** 16 GB of GPU memory is comfortable (for example an NVIDIA T4, L4 or
-  A10). IndicF5 itself is small; the extra room lets Whisper load alongside it.
+  A10). IndicF5, DhVaani, Indic Parler-TTS and Whisper together need well under
+  that. An L4 is roughly twice as fast as a T4; pick it if the price gap is small.
 - **Disk:** 60 GB or more (Docker image plus models).
 - **Billing:** hourly, so you can stop it when nobody is using the app.
 
@@ -23,7 +26,10 @@ Pick an image described as "Ubuntu + NVIDIA driver" or "Deep Learning".
 ## 2. Get a Hugging Face token (free, once)
 
 1. Make an account at https://huggingface.co.
-2. Open https://huggingface.co/ai4bharat/IndicF5 and accept the terms.
+2. Accept the terms on each model page (all free):
+   - https://huggingface.co/ai4bharat/IndicF5
+   - https://huggingface.co/ARTPARK-IISc/DhVaani-0.5 (faster cloning)
+   - https://huggingface.co/ai4bharat/indic-parler-tts (describe a voice)
 3. Create a **read** token at https://huggingface.co/settings/tokens.
 
 ## 3. Run the setup script
@@ -54,7 +60,11 @@ Type both into the app under **Settings**.
 | Update to the latest code | `git pull && bash deploy/setup-gpu-vm.sh` |
 
 Stop or pause the server from your provider's dashboard when you're not using
-it. Voices and settings live in Docker volumes and survive restarts.
+it. Voices and settings live in Docker volumes and survive restarts. After a
+restart, SSH in and run `bash deploy/setup-gpu-vm.sh` again: the Docker build
+is cached, so it takes about a minute, and it prints the new tunnel URL to
+enter in the app (the API key stays the same). A stopped VM usually still
+bills a little for its disk; delete it when you're done for good.
 
 ## The tunnel URL
 

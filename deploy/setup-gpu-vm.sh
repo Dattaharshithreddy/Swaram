@@ -12,7 +12,8 @@
 #   2. Clones the repo to ~/Swaram (unless run from inside a clone).
 #   3. Creates .env with a random API key and your Hugging Face token.
 #   4. Builds and starts the server plus a Cloudflare https tunnel.
-#   5. Downloads IndicF5 and Whisper so the first request is fast.
+#   5. Downloads IndicF5, Whisper, DhVaani and Indic Parler-TTS so the first
+#      request is fast.
 #   6. Prints the URL and API key to type into the Swaram mobile app.
 #
 # Safe to run again: it keeps an existing .env and only restarts the stack.
@@ -21,7 +22,7 @@ set -euo pipefail
 
 REPO_URL="${SWARAM_REPO_URL:-https://github.com/Dattaharshithreddy/Swaram.git}"
 INSTALL_DIR="${SWARAM_DIR:-$HOME/Swaram}"
-PREFETCH_MODELS=("indicf5" "whisper-turbo")
+PREFETCH_MODELS=("indicf5" "whisper-turbo" "dhvaani" "indic-parler-tts")
 
 say() { printf '\n\033[1;33m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31mError: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -75,11 +76,15 @@ if [ ! -f .env ]; then
     say "Creating .env"
     API_KEY="$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40)"
     HF_TOKEN_VALUE="${HF_TOKEN:-}"
-    if [ -z "$HF_TOKEN_VALUE" ] && [ -t 0 ]; then
-        echo "IndicF5 needs a Hugging Face token (free)."
-        echo "  1) Accept the terms at https://huggingface.co/ai4bharat/IndicF5"
+    # Read from the terminal even under `curl ... | bash`, where stdin is the script.
+    if [ -z "$HF_TOKEN_VALUE" ] && { [ -t 0 ] || [ -r /dev/tty ]; }; then
+        echo "The voice models need a Hugging Face token (free)."
+        echo "  1) Accept the terms on each model page:"
+        echo "       https://huggingface.co/ai4bharat/IndicF5"
+        echo "       https://huggingface.co/ARTPARK-IISc/DhVaani-0.5"
+        echo "       https://huggingface.co/ai4bharat/indic-parler-tts"
         echo "  2) Create a read token at https://huggingface.co/settings/tokens"
-        read -r -p "Paste the token (or press Enter to skip for now): " HF_TOKEN_VALUE
+        read -r -p "Paste the token (or press Enter to skip for now): " HF_TOKEN_VALUE </dev/tty || HF_TOKEN_VALUE=""
     fi
     umask 077
     cat > .env <<EOF
@@ -139,7 +144,7 @@ cat <<EOF
    Server URL : ${URL:-<not found yet: run '${COMPOSE[*]} logs tunnel'>}
    API key    : $SWARAM_API_KEY
 
- Model downloads continue in the background (IndicF5 is about 1.5 GB).
+ Model downloads continue in the background (about 6 GB in total).
  Progress: ${COMPOSE[*]} logs -f voicebox
 
  Stop the GPU server when you are not using it, to save money.

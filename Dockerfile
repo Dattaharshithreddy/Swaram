@@ -106,6 +106,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy installed Python packages from builder stage
 COPY --from=backend-builder /install /usr/local
 
+# Indic Parler-TTS (voices from a description) pins transformers 4.46.1, so it
+# gets its own venv. --system-site-packages reuses the torch installed above
+# instead of downloading a second copy; only parler-tts and its pinned deps
+# land in the venv. The server runs it as a worker (backend/backends/parler_worker.py).
+# Skip with --build-arg WITH_PARLER=0 to save ~1 GB.
+ARG WITH_PARLER=1
+RUN if [ "$WITH_PARLER" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends git && \
+      python -m venv --system-site-packages /opt/parler && \
+      /opt/parler/bin/pip install --no-cache-dir \
+        "transformers==4.46.1" git+https://github.com/huggingface/parler-tts.git && \
+      /opt/parler/bin/python -c "import parler_tts" && \
+      apt-get purge -y git && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*; \
+    fi
+ENV SWARAM_PARLER_PYTHON=/opt/parler/bin/python
+
 # Copy backend application code
 COPY --chown=voicebox:voicebox backend/ /app/backend/
 
