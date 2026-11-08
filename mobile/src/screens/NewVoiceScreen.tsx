@@ -224,6 +224,14 @@ export function NewVoiceScreen({
             disabled={!clipUri || recState.isRecording}
           />
         )}
+        {!!lang?.readAloud && transcript.trim() !== lang.readAloud && (
+          <Button
+            title="Use the sentence I read"
+            kind="secondary"
+            onPress={() => setTranscript(lang.readAloud)}
+            disabled={recState.isRecording}
+          />
+        )}
         <Field
           label="Transcript"
           value={transcript}
