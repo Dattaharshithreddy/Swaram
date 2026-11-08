@@ -124,8 +124,6 @@ class IndicF5Backend:
                     "pip install --no-deps git+https://github.com/AI4Bharat/IndicF5.git"
                 ) from exc
 
-            from transformers import AutoModel
-
             try:
                 from huggingface_hub.errors import GatedRepoError
             except ImportError:  # older huggingface_hub
@@ -135,13 +133,28 @@ class IndicF5Backend:
             logger.info("Loading IndicF5 on %s...", device)
 
             try:
-                model = AutoModel.from_pretrained(INDICF5_HF_REPO, trust_remote_code=True)
+                # Direct load (backends/indicf5_direct.py), as the Kaggle render
+                # does. The Hugging Face wrapper builds its vocoder on the meta
+                # device under recent transformers and crashes on .to(device).
+                from .indicf5_direct import load_indicf5
+
+                model = load_indicf5()
             except GatedRepoError as exc:
                 raise RuntimeError(
                     "IndicF5 is a gated model. Accept its terms at "
                     "https://huggingface.co/ai4bharat/IndicF5, then run "
                     "`hf auth login` (or set HF_TOKEN) and try again."
                 ) from exc
+            except Exception as direct_exc:
+                logger.warning("Direct IndicF5 load failed (%s); trying the Hugging Face wrapper", direct_exc)
+                from transformers import AutoModel
+
+                try:
+                    model = AutoModel.from_pretrained(INDICF5_HF_REPO, trust_remote_code=True, low_cpu_mem_usage=False)
+                except Exception as wrapper_exc:
+                    raise RuntimeError(
+                        f"Could not load IndicF5. Direct load: {direct_exc}. Wrapper: {wrapper_exc}"
+                    ) from wrapper_exc
 
             try:
                 model = model.to(device)
@@ -265,7 +278,8 @@ class IndicF5Backend:
 
             cfm = getattr(self.model, "ema_model", None)
             vocoder = getattr(self.model, "vocoder", None)
-            if self.fast_path and cfm is not None and vocoder is not None and hasattr(cfm, "sample"):
+            use_fast = self.fast_path or not callable(self.model)
+            if use_fast and cfm is not None and vocoder is not None and hasattr(cfm, "sample"):
                 from . import f5_fast
 
                 ref = self._prepared_reference(voice_prompt)
