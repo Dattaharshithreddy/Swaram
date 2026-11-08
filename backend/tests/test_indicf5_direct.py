@@ -12,7 +12,7 @@ pytest.importorskip("f5_tts")
 pytest.importorskip("vocos")
 torch = pytest.importorskip("torch")
 
-from backend.backends import (
+from backend.backends import (  # noqa: E402
     f5_fast,
     indicf5_direct as direct,
 )
