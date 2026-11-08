@@ -99,6 +99,11 @@ SWARAM_API_KEY=$API_KEY
 HF_TOKEN=$HF_TOKEN_VALUE
 EOF
 fi
+# Size the container to this machine: docker refuses a CPU limit above the
+# host's core count (the compose default is 8, a g4dn.xlarge has 4).
+grep -q '^SWARAM_CPUS=' .env || echo "SWARAM_CPUS=$(nproc)" >> .env
+grep -q '^SWARAM_MEMORY=' .env \
+    || echo "SWARAM_MEMORY=$(awk '/MemTotal/ {printf "%dm", $2 / 1024 * 0.9}' /proc/meminfo)" >> .env
 # shellcheck disable=SC1091
 set -a; . ./.env; set +a
 [ -n "${HF_TOKEN:-}" ] || echo "Note: no HF_TOKEN in .env yet, so IndicF5 cannot download. Add it and re-run."
