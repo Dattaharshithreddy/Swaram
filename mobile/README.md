@@ -24,7 +24,8 @@ Actions tab.)
 2. **Voices → Clone a new voice:** name, language, then record 5–12 seconds reading the sentence on screen. Tap *Fill in automatically*, fix the transcript so it matches the recording word for word, tick the consent box, *Create voice*.
    Pick the engine: **IndicF5** (best-known quality) or **DhVaani** (several times faster).
 3. **Voices → Describe a new voice** (no recording): name, language, tap what it should sound like (woman/man, pitch, pace, style, optional base voice), *Make a take* up to three times, pick the take you like, *Save voice*. The take becomes the voice's reference, so every line sounds exactly like it. Needs Indic Parler-TTS on the server (`just setup-parler`).
-4. **Speak:** pick the voice, type the text in that language's script, *Generate*. Play it, or *Share* to WhatsApp, Drive and so on.
+4. **Library:** everything the server made, including audio you asked Claude for. *Play*, *Save* to Downloads, or *Share* straight into a video editor such as CapCut. It refreshes by itself while something is still being made.
+5. **Speak:** pick the voice, type the text in that language's script, *Generate*. Play it, or *Share* to WhatsApp, Drive and so on.
 
 **Offline tab (beta):** no server at all. Download the model once (~450 MB, from the `edge-model` release made by the "Edge model" workflow), record 5–12 seconds reading the sentence shown, and generate on the phone. After each run it shows how fast your phone is. See [edge/README.md](../edge/README.md).
 

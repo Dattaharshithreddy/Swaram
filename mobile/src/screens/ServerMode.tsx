@@ -5,12 +5,13 @@ import { Header, Segmented } from '../components/ui';
 import { useServerConfig } from '../settings';
 import { useApp } from '../state';
 import { space } from '../theme';
+import { LibraryScreen } from './LibraryScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { SpeakScreen } from './SpeakScreen';
 import { VoicesScreen } from './VoicesScreen';
 import { friendlyError } from '../errors';
 
-type Sub = 'speak' | 'voices' | 'connection';
+type Sub = 'speak' | 'voices' | 'library' | 'connection';
 
 /** The optional paid GPU server: its own Speak / Voices / Connection screens. */
 export function ServerMode() {
@@ -49,6 +50,7 @@ export function ServerMode() {
           options={[
             { key: 'speak', label: 'Speak' },
             { key: 'voices', label: 'Voices' },
+            { key: 'library', label: 'Library' },
             { key: 'connection', label: 'Connection' },
           ]}
           value={sub}
@@ -58,6 +60,7 @@ export function ServerMode() {
       <View style={{ flex: 1 }}>
         {sub === 'speak' && <SpeakScreen config={config} voices={voices} onGoToVoices={() => setSub('voices')} />}
         {sub === 'voices' && <VoicesScreen config={config} voices={voices} loading={loading} error={error} reload={reload} />}
+        {sub === 'library' && <LibraryScreen config={config} />}
         {sub === 'connection' && <SettingsScreen config={config} onSave={save} />}
       </View>
     </View>
