@@ -234,8 +234,19 @@ export const api = {
     }),
 
   /** Speech-to-text for the reference clip, so the user only has to correct it. */
-  transcribe: (cfg: ServerConfig, audioUri: string, language: LanguageCode) =>
-    uploadFile<{ text: string; duration: number }>(cfg, '/transcribe', audioUri, { language, model: 'turbo' }),
+  transcribe: async (cfg: ServerConfig, audioUri: string, language: LanguageCode) => {
+    const res = await uploadFile<{ text?: string; duration?: number; detail?: { message?: string } }>(
+      cfg,
+      '/transcribe',
+      audioUri,
+      { language, model: 'turbo' },
+    );
+    // 202: the server is still downloading Whisper and asks to try again.
+    if (typeof res.text !== 'string') {
+      throw new ApiError(res.detail?.message ?? 'The server is still getting ready. Try again in a minute.', 202);
+    }
+    return { text: res.text, duration: res.duration ?? 0 };
+  },
 
   /** Everything the server has made, newest first (includes audio Claude made). */
   listGenerations: async (cfg: ServerConfig, limit = 50) =>
