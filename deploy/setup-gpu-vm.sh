@@ -20,6 +20,12 @@
 
 set -euo pipefail
 
+# Everything runs inside main(), so bash reads the whole script before running
+# any of it. Under `curl ... | bash` the script arrives on stdin, and on Ubuntu
+# 22.04 `sudo` (use_pty) reads stdin too, which used to swallow the rest of
+# the script right after the GPU line.
+main() {
+
 REPO_URL="${SWARAM_REPO_URL:-https://github.com/Dattaharshithreddy/Swaram.git}"
 INSTALL_DIR="${SWARAM_DIR:-$HOME/Swaram}"
 PREFETCH_MODELS=("indicf5" "whisper-turbo" "dhvaani" "indic-parler-tts")
@@ -93,6 +99,11 @@ SWARAM_API_KEY=$API_KEY
 HF_TOKEN=$HF_TOKEN_VALUE
 EOF
 fi
+# Size the container to this machine: docker refuses a CPU limit above the
+# host's core count (the compose default is 8, a g4dn.xlarge has 4).
+grep -q '^SWARAM_CPUS=' .env || echo "SWARAM_CPUS=$(nproc)" >> .env
+grep -q '^SWARAM_MEMORY=' .env \
+    || echo "SWARAM_MEMORY=$(awk '/MemTotal/ {printf "%dm", $2 / 1024 * 0.9}' /proc/meminfo)" >> .env
 # shellcheck disable=SC1091
 set -a; . ./.env; set +a
 [ -n "${HF_TOKEN:-}" ] || echo "Note: no HF_TOKEN in .env yet, so IndicF5 cannot download. Add it and re-run."
@@ -151,3 +162,6 @@ cat <<EOF
  The tunnel URL changes after a restart; re-run this script to see it.
 ────────────────────────────────────────────────────────────
 EOF
+}
+
+main "$@"
