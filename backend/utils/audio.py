@@ -60,8 +60,43 @@ def load_audio(
     Returns:
         Tuple of (audio_array, sample_rate)
     """
-    audio, sr = librosa.load(path, sr=sample_rate, mono=mono)
+    try:
+        audio, sr = librosa.load(path, sr=sample_rate, mono=mono)
+    except Exception as exc:
+        # soundfile can't read AAC/M4A (what phones record) or WebM, and
+        # recent librosa no longer falls back to audioread. Decode with
+        # ffmpeg instead when it's available.
+        audio = _decode_with_ffmpeg(path, sample_rate, mono)
+        if audio is None:
+            raise exc
+        sr = sample_rate
     return audio, sr
+
+
+def _decode_with_ffmpeg(path: str, sample_rate: int, mono: bool) -> Optional[np.ndarray]:
+    """Decode any format ffmpeg understands to float32 PCM; None without ffmpeg."""
+    import subprocess
+
+    from .ffmpeg import find_ffmpeg
+
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        return None
+    channels = 1 if mono else 2
+    result = subprocess.run(
+        [ffmpeg, "-nostdin", "-v", "error", "-i", str(path), "-f", "f32le", "-acodec", "pcm_f32le",
+         "-ac", str(channels), "-ar", str(sample_rate), "-"],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout:
+        raise ValueError(
+            f"Could not read this audio file: {result.stderr.decode(errors='replace').strip()[:200] or 'unknown format'}"
+        )
+    audio = np.frombuffer(result.stdout, dtype=np.float32).copy()
+    if not mono:
+        audio = audio.reshape(-1, 2).T
+    return audio
 
 
 def save_audio(
