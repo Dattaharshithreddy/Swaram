@@ -20,6 +20,12 @@
 
 set -euo pipefail
 
+# Everything runs inside main(), so bash reads the whole script before running
+# any of it. Under `curl ... | bash` the script arrives on stdin, and on Ubuntu
+# 22.04 `sudo` (use_pty) reads stdin too, which used to swallow the rest of
+# the script right after the GPU line.
+main() {
+
 REPO_URL="${SWARAM_REPO_URL:-https://github.com/Dattaharshithreddy/Swaram.git}"
 INSTALL_DIR="${SWARAM_DIR:-$HOME/Swaram}"
 PREFETCH_MODELS=("indicf5" "whisper-turbo" "dhvaani" "indic-parler-tts")
@@ -151,3 +157,6 @@ cat <<EOF
  The tunnel URL changes after a restart; re-run this script to see it.
 ────────────────────────────────────────────────────────────
 EOF
+}
+
+main "$@"
