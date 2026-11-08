@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import { api, type ModelStatus, REQUIRED_MODELS, type ServerConfig } from '../api';
-import { Body, Button, Card, Field, Label, Notice, Title } from '../components/ui';
+import { api, type ModelStatus, OPTIONAL_MODELS, type Quality, REQUIRED_MODELS, type ServerConfig } from '../api';
+import { Body, Button, Card, Field, Label, Notice, Segmented, Title } from '../components/ui';
 import { space } from '../theme';
 import { friendlyError } from '../errors';
 
@@ -17,6 +17,8 @@ export function SettingsScreen({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
   const [models, setModels] = useState<ModelStatus[] | null>(null);
+  // null: the server is older and has no speed setting.
+  const [quality, setQualityState] = useState<Quality | null>(null);
 
   useEffect(() => {
     setUrl(config.url);
@@ -34,6 +36,7 @@ export function SettingsScreen({
       const health = await api.health(saved);
       await api.listVoices(saved); // proves the API key works
       setModels(await api.modelStatus(saved));
+      setQualityState(await api.getQuality(saved).catch(() => null));
       setMessage({
         kind: 'ok',
         text: `Connected. ${health.gpu_available ? `GPU: ${health.gpu_type ?? 'yes'}` : 'No GPU detected: generation will be very slow.'}`,
@@ -55,7 +58,21 @@ export function SettingsScreen({
     }
   }
 
-  const required = REQUIRED_MODELS.map((r) => ({ ...r, status: models?.find((m) => m.model_name === r.model) }));
+  async function changeQuality(next: Quality) {
+    const before = quality;
+    setQualityState(next);
+    try {
+      setQualityState(await api.setQuality(config, next));
+    } catch (e) {
+      setQualityState(before);
+      setMessage({ kind: 'error', text: friendlyError(e) });
+    }
+  }
+
+  const required = [...REQUIRED_MODELS, ...OPTIONAL_MODELS].map((r) => ({
+    ...r,
+    status: models?.find((m) => m.model_name === r.model),
+  }));
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }} keyboardShouldPersistTaps="handled">
@@ -86,6 +103,22 @@ export function SettingsScreen({
         <Button title="Save and test" onPress={saveAndTest} busy={busy} disabled={!url.trim()} />
         {message && <Notice text={message.text} kind={message.kind} />}
       </Card>
+
+      {quality && (
+        <Card>
+          <Label>Speed or quality</Label>
+          <Body muted>Applies to IndicF5 and DhVaani on the server. Fast takes about half the time of Studio.</Body>
+          <Segmented
+            options={[
+              { key: 'fast', label: 'Fast' },
+              { key: 'balanced', label: 'Balanced' },
+              { key: 'studio', label: 'Studio' },
+            ]}
+            value={quality}
+            onChange={changeQuality}
+          />
+        </Card>
+      )}
 
       {models && (
         <Card>

@@ -252,6 +252,8 @@ TTS_ENGINES = {
     "kokoro": "Kokoro",
     "omnivoice": "OmniVoice",
     "indicf5": "IndicF5",
+    "dhvaani": "DhVaani",
+    "indic_parler": "Indic Parler-TTS",
 }
 
 LLM_ENGINES = {
@@ -445,6 +447,28 @@ def _get_non_qwen_tts_configs() -> list[ModelConfig]:
             size_mb=1450,
             needs_trim=True,
             languages=INDIC_LANGUAGES,
+        ),
+        ModelConfig(
+            model_name="dhvaani",
+            # Apache-2.0 weights (gated on Hugging Face, like IndicF5).
+            # ~0.1B ZipVoice model: the fast Indian-language cloner.
+            display_name="DhVaani (fast Indian-language cloning)",
+            engine="dhvaani",
+            hf_repo_id="ARTPARK-IISc/DhVaani-0.5",
+            aux_hf_repo_ids=("charactr/vocos-mel-24khz",),
+            size_mb=500,
+            languages=INDIC_LANGUAGES,
+        ),
+        ModelConfig(
+            model_name="indic-parler-tts",
+            # Apache-2.0, gated. Voices described in words (no recording);
+            # runs in its own Python env, see backends/parler_worker.py.
+            display_name="Indic Parler-TTS (describe a voice)",
+            engine="indic_parler",
+            hf_repo_id="ai4bharat/indic-parler-tts",
+            size_mb=3800,
+            supports_instruct=True,
+            languages=list(SUPPORTED_LANGUAGES),
         ),
     ]
 
@@ -820,6 +844,14 @@ def get_tts_backend_for_engine(engine: str) -> TTSBackend:
             from .indicf5_backend import IndicF5Backend
 
             backend = IndicF5Backend()
+        elif engine == "dhvaani":
+            from .dhvaani_backend import DhVaaniBackend
+
+            backend = DhVaaniBackend()
+        elif engine == "indic_parler":
+            from .indic_parler_backend import IndicParlerBackend
+
+            backend = IndicParlerBackend()
         elif engine == "qwen_custom_voice":
             from .qwen_custom_voice_backend import QwenCustomVoiceBackend
 

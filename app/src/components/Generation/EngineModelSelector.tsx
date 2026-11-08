@@ -18,6 +18,8 @@ import type { GenerationFormValues } from '@/lib/hooks/useGenerationForm';
  */
 const ENGINE_OPTIONS = [
   { value: 'indicf5', label: 'IndicF5 (Indian languages)', engine: 'indicf5' },
+  { value: 'dhvaani', label: 'DhVaani (fast, Indian languages)', engine: 'dhvaani' },
+  { value: 'indic_parler', label: 'Indic Parler-TTS (describe a voice)', engine: 'indic_parler' },
   { value: 'qwen:1.7B', label: 'Qwen3-TTS 1.7B', engine: 'qwen' },
   { value: 'qwen:0.6B', label: 'Qwen3-TTS 0.6B', engine: 'qwen' },
   { value: 'qwen_custom_voice:1.7B', label: 'Qwen CustomVoice 1.7B', engine: 'qwen_custom_voice' },
@@ -34,6 +36,8 @@ const ENGINE_OPTIONS = [
 
 const ENGINE_DESCRIPTIONS: Record<string, string> = {
   indicf5: 'Telugu, Hindi, Tamil and 8 more Indian languages. MIT licensed',
+  dhvaani: 'Fast cloning in all 11 Indian languages, ~0.1B params. Apache-2.0',
+  indic_parler: 'Voices described in words, English + 11 Indian languages. Apache-2.0',
   qwen: 'English, two sizes',
   qwen_custom_voice: '9 preset voices, instruct control',
   qwen_voice_design: 'Voices described in plain language',
@@ -52,6 +56,7 @@ const ENGLISH_ONLY_ENGINES = new Set(['luxtts', 'chatterbox_turbo']);
 /** Engines that support cloned (reference audio) profiles. */
 const CLONING_ENGINES = new Set([
   'indicf5',
+  'dhvaani',
   'qwen',
   'luxtts',
   'chatterbox',
@@ -61,7 +66,7 @@ const CLONING_ENGINES = new Set([
 ]);
 
 /** Engines that synthesise a voice from a written description. */
-export const DESIGN_ENGINES = new Set(['qwen_voice_design']);
+export const DESIGN_ENGINES = new Set(['qwen_voice_design', 'indic_parler']);
 
 function getAvailableOptions(selectedProfile?: VoiceProfileResponse | null) {
   if (!selectedProfile) return ENGINE_OPTIONS;

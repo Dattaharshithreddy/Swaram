@@ -81,7 +81,9 @@ export interface GenerationRequest {
     | 'tada'
     | 'kokoro'
     | 'omnivoice'
-    | 'indicf5';
+    | 'indicf5'
+    | 'dhvaani'
+    | 'indic_parler';
   instruct?: string;
   /** When true and the profile has a personality prompt, input text is rewritten in-character before TTS. */
   personality?: boolean;

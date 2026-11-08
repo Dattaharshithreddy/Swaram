@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api, type ServerConfig } from '../api';
 import { Body, Button, Card, Chip, Field, Label, Notice, Title } from '../components/ui';
-import { canTranscribe, engineFor, LANGUAGES, type LanguageCode, languageByCode } from '../languages';
+import { canTranscribe, cloneEnginesFor, engineFor, LANGUAGES, type LanguageCode, languageByCode } from '../languages';
 import { radius, space, useTheme } from '../theme';
 import { friendlyError } from '../errors';
 
@@ -33,6 +33,7 @@ export function NewVoiceScreen({
   const t = useTheme();
   const [name, setName] = useState('');
   const [language, setLanguage] = useState<LanguageCode>('te');
+  const [engine, setEngine] = useState<string>(engineFor('te'));
   const [clipUri, setClipUri] = useState<string | null>(null);
   const [clipSeconds, setClipSeconds] = useState<number | null>(null);
   const [transcript, setTranscript] = useState('');
@@ -112,7 +113,7 @@ export function NewVoiceScreen({
       await api.createVoice(config, {
         name: name.trim(),
         language,
-        engine: engineFor(language),
+        engine,
         audioUri: clipUri,
         transcript: transcript.trim(),
       });
@@ -152,10 +153,23 @@ export function NewVoiceScreen({
               key={l.code}
               label={l.native === l.name ? l.name : `${l.native} · ${l.name}`}
               selected={language === l.code}
-              onPress={() => setLanguage(l.code)}
+              onPress={() => {
+                setLanguage(l.code);
+                setEngine(engineFor(l.code));
+              }}
             />
           ))}
         </View>
+        {cloneEnginesFor(language).length > 1 && (
+          <>
+            <Label>Engine</Label>
+            <View style={styles.wrap}>
+              {cloneEnginesFor(language).map((e) => (
+                <Chip key={e.key} label={`${e.label} · ${e.hint}`} selected={engine === e.key} onPress={() => setEngine(e.key)} />
+              ))}
+            </View>
+          </>
+        )}
       </Card>
 
       <Card>

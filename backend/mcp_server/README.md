@@ -1,22 +1,32 @@
-# Voicebox MCP server
+# Swaram MCP server
 
-Local **Model Context Protocol** server — lets any MCP-aware agent
-(Claude Code, Cursor, Windsurf, VS Code MCP extensions, etc.) speak text
-in your cloned voices, transcribe audio, and browse captures.
+Local **Model Context Protocol** server — lets Claude (Code or Desktop) and
+any other MCP-aware agent **design new voices from a description**, clone
+voices from a recording, read text in them, transcribe audio, and browse
+captures.
 
 The server runs inside the same `uvicorn` process as the rest of Voicebox
 and is mounted at `/mcp` (Streamable HTTP transport).
 
 ## Install into your agent
 
-Preferred — direct HTTP:
+Claude Code:
+
+```bash
+claude mcp add --transport http swaram http://127.0.0.1:17493/mcp --header "X-Voicebox-Client-Id: claude-code"
+```
+
+Remote GPU server with `SWARAM_API_KEY` set: use its URL and add
+`--header "Authorization: Bearer <key>"`.
+
+Any client that takes JSON config (Claude Desktop via a connector, Cursor, …):
 
 ```json
 {
   "mcpServers": {
-    "voicebox": {
+    "swaram": {
       "url": "http://127.0.0.1:17493/mcp",
-      "headers": { "X-Voicebox-Client-Id": "claude-code" }
+      "headers": { "X-Voicebox-Client-Id": "claude-desktop" }
     }
   }
 }
@@ -36,16 +46,35 @@ Fallback — stdio shim (when the client doesn't speak HTTP MCP). The
 }
 ```
 
-Claude Code one-liner:
-
-```
-claude mcp add voicebox \
-  --transport http \
-  --url http://127.0.0.1:17493/mcp \
-  --header "X-Voicebox-Client-Id: claude-code"
-```
-
 ## Tools
+
+### Swaram tools (voice design and cloning)
+
+| Name | Purpose |
+|---|---|
+| `swaram_voice_design_guide` | How to describe a voice, recommended speaker names per language, sample text. |
+| `swaram_preview_voice`      | Description → WAV to listen to. Nothing is saved. Try a few seeds. |
+| `swaram_design_voice`       | Save a described voice. `lock=true` (default) renders a sample once and saves a cloned voice, so every line sounds identical. Pass `preview_audio_path` to keep a preview you liked. |
+| `swaram_clone_voice`        | Clone from a recording (`audio_path` on the server, or `audio_base64`). Whisper fills the transcript if omitted (not Odia). |
+| `swaram_speak`              | Read text in a voice and wait for the WAV (path, URL, duration). `quality` = fast / balanced / studio. |
+| `swaram_get_audio`          | Poll a `swaram_speak(wait=false)` generation. |
+| `swaram_compare_engines`    | Same text, one voice, several engines (default IndicF5 vs DhVaani), with timings. |
+| `swaram_set_quality`        | Server-wide speed/quality preset for IndicF5 and DhVaani. |
+| `swaram_list_voices`        | Saved voices with language, type and default engine. |
+
+Paths in results are on the machine running the server; `audio_url` is the
+same file over HTTP (prefix the server URL).
+
+Designing voices needs Indic Parler-TTS (`just setup-parler`, plus accepting
+its terms on Hugging Face). English designs use Qwen VoiceDesign.
+
+Example prompts:
+
+- "Create a Hindi news-anchor voice: confident man, crisp, medium pace. Show me 3 options."
+- "Save option 2 as Rohit-News and read today's headlines in it: …"
+- "Clone my voice from /home/me/clip.wav, it's Telugu."
+
+### Original Voicebox tools
 
 | Name | Purpose |
 |---|---|
@@ -90,7 +119,8 @@ curl -X POST http://127.0.0.1:17493/speak \
 backend/mcp_server/
 ├── __init__.py      # re-export mount_into
 ├── server.py        # build_mcp_server() + mount_into(app)
-├── tools.py         # @mcp.tool() implementations
+├── tools.py         # voicebox_* tools (speak, transcribe, captures, profiles)
+├── swaram_tools.py  # swaram_* tools (design, clone, speak-and-wait, compare)
 ├── context.py       # ClientIdMiddleware + current_client_id ContextVar
 ├── resolve.py       # profile resolution precedence
 ├── events.py        # pub/sub queue for /events/speak pill SSE

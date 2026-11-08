@@ -219,6 +219,28 @@ setup-python:
     Invoke-Pip install pyinstaller ruff pytest pytest-asyncio openai -q; \
     Write-Host "Python environment ready."
 
+# Separate Python env for Indic Parler-TTS (voices from a description).
+# parler-tts pins transformers 4.46.1, so it can't share the main venv; the
+# server runs it as a worker process (backend/backends/parler_worker.py).
+[unix]
+setup-parler:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PY="$(command -v python{{ python_version }} || command -v python3)"
+    "$PY" -m venv .venv-parler
+    .venv-parler/bin/python -m pip install -U pip -q
+    .venv-parler/bin/python -m pip install torch soundfile numpy
+    .venv-parler/bin/python -m pip install git+https://github.com/huggingface/parler-tts.git
+    echo "Indic Parler-TTS ready. Accept the model terms at https://huggingface.co/ai4bharat/indic-parler-tts and run 'hf auth login' if you haven't."
+
+[windows]
+setup-parler:
+    py -{{ python_version }} -m venv .venv-parler; \
+    .venv-parler\Scripts\python.exe -m pip install -U pip -q; \
+    .venv-parler\Scripts\python.exe -m pip install torch soundfile numpy; \
+    .venv-parler\Scripts\python.exe -m pip install git+https://github.com/huggingface/parler-tts.git; \
+    Write-Host "Indic Parler-TTS ready."
+
 # Install JavaScript dependencies
 setup-js:
     bun install

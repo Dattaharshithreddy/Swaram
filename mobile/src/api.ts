@@ -30,6 +30,35 @@ export interface ModelStatus {
   size_mb: number | null;
 }
 
+export type Quality = 'fast' | 'balanced' | 'studio';
+
+/** Engines that clone a voice on the server. */
+export type CloneEngine = 'indicf5' | 'dhvaani' | 'chatterbox';
+
+export interface DesignPreview {
+  preview_id: string;
+  audio_url: string;
+  description: string;
+  text: string;
+  seconds: number;
+  render_seconds: number;
+  /** Local copy of the preview audio, for playback. */
+  uri: string;
+}
+
+/** Something the server made: from the app, the desktop app, or Claude. */
+export interface Generation {
+  id: string;
+  profile_name: string;
+  text: string;
+  language: string;
+  duration: number | null;
+  engine: string | null;
+  status: string;
+  error: string | null;
+  created_at: string;
+}
+
 export interface Health {
   status: string;
   gpu_available: boolean;
@@ -85,6 +114,27 @@ async function request<T>(cfg: ServerConfig, path: string, init: RequestInit = {
   return (await res.json()) as T;
 }
 
+/**
+ * Download an audio file from the server (with the API key) to a local file.
+ * ``name`` without an extension gets one from the response type.
+ */
+async function fetchAudio(cfg: ServerConfig, path: string, name: string): Promise<File> {
+  let res: Response;
+  try {
+    res = await fetch(normalizeUrl(cfg.url) + path, { headers: headers(cfg, { Accept: '*/*' }) });
+  } catch {
+    throw new ApiError('Could not reach the server. Check your internet and the server URL.', 0);
+  }
+  if (!res.ok) throw await readError(res);
+  if (!/\.[a-z0-9]+$/i.test(name)) {
+    const type = res.headers.get('content-type') ?? '';
+    name += type.includes('mpeg') ? '.mp3' : type.includes('mp4') ? '.m4a' : '.wav';
+  }
+  const file = new File(Paths.cache, name);
+  await file.write(new Uint8Array(await res.arrayBuffer()));
+  return file;
+}
+
 export const api = {
   health: (cfg: ServerConfig) => request<Health>(cfg, '/health'),
 
@@ -118,6 +168,70 @@ export const api = {
     });
     return res;
   },
+
+  /** Everything the server has made, newest first (includes audio Claude made). */
+  listGenerations: async (cfg: ServerConfig, limit = 50) =>
+    (await request<{ items: Generation[]; total: number }>(cfg, `/history?limit=${limit}`)).items,
+
+  /** Local copy of a generation's audio; downloaded once, then reused. */
+  generationAudio: async (cfg: ServerConfig, id: string): Promise<File> => {
+    for (const ext of ['wav', 'mp3', 'm4a']) {
+      const cached = new File(Paths.cache, `generation-${id}.${ext}`);
+      if (cached.exists) return cached;
+    }
+    return fetchAudio(cfg, `/audio/${encodeURIComponent(id)}`, `generation-${id}`);
+  },
+
+  deleteGeneration: (cfg: ServerConfig, id: string) =>
+    request<unknown>(cfg, `/history/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  /** Speed/quality preset the server uses for IndicF5 and DhVaani. */
+  getQuality: async (cfg: ServerConfig) => (await request<{ quality: Quality }>(cfg, '/indic/quality')).quality,
+
+  setQuality: async (cfg: ServerConfig, quality: Quality) =>
+    (
+      await request<{ quality: Quality }>(cfg, '/indic/quality', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quality }),
+      })
+    ).quality,
+
+  /** Render a voice from a written description (Indic Parler-TTS). Nothing is saved. */
+  previewDesign: async (
+    cfg: ServerConfig,
+    opts: { description: string; language: LanguageCode; speaker?: string; seed?: number; text?: string },
+  ): Promise<DesignPreview> => {
+    const res = await request<Omit<DesignPreview, 'uri'>>(cfg, '/indic/design/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts),
+    });
+    const file = await fetchAudio(cfg, res.audio_url, res.preview_id);
+    return { ...res, uri: file.uri };
+  },
+
+  /**
+   * Save a described voice. It is "locked": the chosen preview becomes the
+   * voice's reference clip, so every line keeps exactly this voice.
+   */
+  saveDesign: (
+    cfg: ServerConfig,
+    opts: { name: string; description: string; language: LanguageCode; previewId: string; engine: CloneEngine; text: string },
+  ) =>
+    request<{ profile: VoiceProfile }>(cfg, '/indic/design', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: opts.name,
+        description: opts.description,
+        language: opts.language,
+        preview_id: opts.previewId,
+        lock: true,
+        lock_engine: opts.engine,
+        text: opts.text,
+      }),
+    }),
 
   /** Create a cloned voice: profile first, then its reference sample. */
   createVoice: async (
@@ -200,4 +314,10 @@ export const REQUIRED_MODELS = [
   { model: 'indicf5', label: 'IndicF5 (Indian languages)' },
   { model: 'whisper-turbo', label: 'Whisper (transcription)' },
   { model: 'chatterbox-tts', label: 'Chatterbox (English)' },
+];
+
+/** Optional models: faster cloning and describing a voice in words. */
+export const OPTIONAL_MODELS = [
+  { model: 'dhvaani', label: 'DhVaani (faster cloning)' },
+  { model: 'indic-parler-tts', label: 'Indic Parler-TTS (describe a voice)' },
 ];

@@ -31,6 +31,8 @@ const generationSchema = z.object({
       'kokoro',
       'omnivoice',
       'indicf5',
+      'dhvaani',
+      'indic_parler',
     ])
     .optional(),
   personality: z.boolean().optional(),
@@ -110,9 +112,13 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
                       ? 'omnivoice'
                       : engine === 'indicf5'
                         ? 'indicf5'
-                        : engine === 'qwen_custom_voice'
-                          ? `qwen-custom-voice-${data.modelSize}`
-                          : `qwen-tts-${data.modelSize}`;
+                        : engine === 'dhvaani'
+                          ? 'dhvaani'
+                          : engine === 'indic_parler'
+                            ? 'indic-parler-tts'
+                            : engine === 'qwen_custom_voice'
+                              ? `qwen-custom-voice-${data.modelSize}`
+                              : `qwen-tts-${data.modelSize}`;
       const displayName =
         engine === 'luxtts'
           ? 'LuxTTS'
@@ -132,13 +138,17 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
                       ? 'OmniVoice'
                       : engine === 'indicf5'
                         ? 'IndicF5'
-                        : engine === 'qwen_custom_voice'
-                          ? data.modelSize === '1.7B'
-                            ? 'Qwen CustomVoice 1.7B'
-                            : 'Qwen CustomVoice 0.6B'
-                          : data.modelSize === '1.7B'
-                            ? 'Qwen TTS 1.7B'
-                            : 'Qwen TTS 0.6B';
+                        : engine === 'dhvaani'
+                          ? 'DhVaani'
+                          : engine === 'indic_parler'
+                            ? 'Indic Parler-TTS'
+                            : engine === 'qwen_custom_voice'
+                              ? data.modelSize === '1.7B'
+                                ? 'Qwen CustomVoice 1.7B'
+                                : 'Qwen CustomVoice 0.6B'
+                              : data.modelSize === '1.7B'
+                                ? 'Qwen TTS 1.7B'
+                                : 'Qwen TTS 0.6B';
 
       // Check if model needs downloading
       try {

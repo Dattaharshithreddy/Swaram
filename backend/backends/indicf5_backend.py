@@ -64,11 +64,21 @@ _VOICE_PROMPT_FORMAT_VERSION = 1
 class IndicF5Backend:
     """IndicF5 backend for zero-shot voice cloning in Indian languages."""
 
+    # generate_chunked hands this engine the whole text: f5_fast splits it
+    # itself and runs every piece in one batch, which is the main speed-up.
+    batches_long_text = True
+
     def __init__(self):
         self.model = None
         self.model_size = "default"  # IndicF5 ships a single checkpoint
         self._device = None
         self._model_load_lock = asyncio.Lock()
+        # Batched, cached, half-precision inference (backends/f5_fast.py).
+        # SWARAM_F5_STOCK=1 forces the remote wrapper's own slower call.
+        import os
+
+        self.fast_path = os.environ.get("SWARAM_F5_STOCK", "").strip() not in ("1", "true", "yes")
+        self._ref_cache: dict = {}
 
     def _get_device(self) -> str:
         return get_torch_device(allow_mps=True, allow_xpu=False)
@@ -148,6 +158,7 @@ class IndicF5Backend:
             del self.model
             self.model = None
             self._device = None
+            self._ref_cache.clear()
             gc.collect()
             empty_device_cache(device)
             logger.info("IndicF5 unloaded")
@@ -252,6 +263,24 @@ class IndicF5Backend:
             if seed is not None:
                 manual_seed(seed, self.device)
 
+            cfm = getattr(self.model, "ema_model", None)
+            vocoder = getattr(self.model, "vocoder", None)
+            if self.fast_path and cfm is not None and vocoder is not None and hasattr(cfm, "sample"):
+                from . import f5_fast
+
+                ref = self._prepared_reference(voice_prompt)
+                audio = f5_fast.synthesize(
+                    cfm,
+                    vocoder,
+                    ref,
+                    text,
+                    device=self._model_device(cfm),
+                    steps=f5_fast.quality_steps(),
+                    seed=seed,
+                )
+                return audio, SAMPLE_RATE
+
+            # Stock path: the remote wrapper's own call (sequential, 32 steps).
             with torch.inference_mode():
                 audio = self.model(
                     text,
@@ -267,3 +296,24 @@ class IndicF5Backend:
             return audio.astype(np.float32), SAMPLE_RATE
 
         return await asyncio.to_thread(_generate_sync)
+
+    def _model_device(self, module) -> str:
+        try:
+            return str(next(module.parameters()).device)
+        except (StopIteration, AttributeError, TypeError):
+            return self.device
+
+    def _prepared_reference(self, voice_prompt: dict):
+        """Normalised reference clip for the fast path, prepared once per voice."""
+        from ..utils.audio import load_audio
+        from . import f5_fast
+
+        key = (voice_prompt["ref_audio_path"], voice_prompt["ref_text"])
+        ref = self._ref_cache.get(key)
+        if ref is None:
+            audio, _sr = load_audio(voice_prompt["ref_audio_path"], sample_rate=SAMPLE_RATE, mono=True)
+            ref = f5_fast.prepare_reference(audio, voice_prompt["ref_text"])
+            if len(self._ref_cache) >= 32:
+                self._ref_cache.pop(next(iter(self._ref_cache)))
+            self._ref_cache[key] = ref
+        return ref

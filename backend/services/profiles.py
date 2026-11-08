@@ -32,12 +32,20 @@ from . import history
 
 logger = logging.getLogger(__name__)
 
-CLONING_ENGINES = {"qwen", "luxtts", "chatterbox", "chatterbox_turbo", "tada", "omnivoice", "indicf5"}
+CLONING_ENGINES = {"qwen", "luxtts", "chatterbox", "chatterbox_turbo", "tada", "omnivoice", "indicf5", "dhvaani"}
 
 # Engines that synthesise a voice from a natural-language description
 # (voice_type "designed") rather than from samples or a preset id.
 DEFAULT_DESIGN_ENGINE = "qwen_voice_design"
-DESIGN_ENGINES = {DEFAULT_DESIGN_ENGINE}
+# Indic Parler-TTS speaks English and all 11 Indian languages from a
+# description; Qwen VoiceDesign is English-only in this edition.
+INDIC_DESIGN_ENGINE = "indic_parler"
+DESIGN_ENGINES = {DEFAULT_DESIGN_ENGINE, INDIC_DESIGN_ENGINE}
+
+
+def default_design_engine(language: str | None) -> str:
+    """Design engine for a new described voice in ``language``."""
+    return DEFAULT_DESIGN_ENGINE if (language or "en") == "en" else INDIC_DESIGN_ENGINE
 
 
 def _profile_to_response(
@@ -134,7 +142,7 @@ def default_engine_for_profile(profile) -> str:
     # Designed profiles created before the design engine existed carry no
     # default_engine; "qwen" would be rejected by validate_profile_engine.
     if getattr(profile, "voice_type", None) == "designed":
-        return DEFAULT_DESIGN_ENGINE
+        return default_design_engine(getattr(profile, "language", None))
     return "qwen"
 
 
@@ -193,7 +201,7 @@ async def create_profile(
     elif voice_type == "designed" and not default_engine:
         # Pick the design engine so the profile is usable straight after
         # creation without the client having to know the engine name.
-        default_engine = DEFAULT_DESIGN_ENGINE
+        default_engine = default_design_engine(data.language)
 
     validation_error = _validate_profile_fields(
         voice_type=voice_type,
@@ -422,7 +430,7 @@ async def update_profile(
     # Designed profiles created before the design engine existed could carry
     # any default_engine; coerce rather than make the profile uneditable.
     if voice_type == "designed" and default_engine not in DESIGN_ENGINES:
-        default_engine = DEFAULT_DESIGN_ENGINE
+        default_engine = default_design_engine(data.language)
 
     validation_error = _validate_profile_fields(
         voice_type=voice_type,

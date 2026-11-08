@@ -69,6 +69,10 @@ const MODEL_DESCRIPTIONS: Record<string, string> = {
     'HumeAI TADA 3B Multilingual — built on Llama 3.2 3B. Supports 10 languages with high-fidelity voice cloning via text-acoustic dual alignment.',
   kokoro:
     'Kokoro 82M by hexgrad. Tiny 82M-parameter TTS that runs at CPU realtime. Supports 8 languages with pre-built voice styles. Apache 2.0 licensed.',
+  dhvaani:
+    'DhVaani-0.5 by ARTPARK, IISc. A ~0.1B ZipVoice model that clones a voice from a 3-10 second clip and its transcript in 27 Indian languages, including all 11 here. Several times faster than IndicF5. Apache-2.0; the download is gated, so accept the terms on huggingface.co/ARTPARK-IISc/DhVaani-0.5 and run `hf auth login` first.',
+  'indic-parler-tts':
+    'Indic Parler-TTS by AI4Bharat. Creates a voice from a written description (no recording) in English and 20 Indian languages. Apache-2.0, gated on huggingface.co/ai4bharat/indic-parler-tts. Runs in its own Python environment: run `just setup-parler` once.',
   indicf5:
     'IndicF5 by AI4Bharat. F5-TTS trained on about 1,400 hours of Indian speech. Clones a voice from a 5-12 second clip and its transcript in Assamese, Bengali, Gujarati, Hindi, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil and Telugu. MIT licensed; the download is gated, so accept the terms on huggingface.co/ai4bharat/IndicF5 and run `hf auth login` first.',
   omnivoice:
@@ -423,7 +427,9 @@ export function ModelManagement() {
         m.model_name.startsWith('tada') ||
         m.model_name.startsWith('kokoro') ||
         m.model_name.startsWith('omnivoice') ||
-        m.model_name.startsWith('indicf5'),
+        m.model_name.startsWith('indicf5') ||
+        m.model_name.startsWith('dhvaani') ||
+        m.model_name.startsWith('indic-parler'),
     ) ?? [];
   const whisperModels = modelStatus?.models.filter((m) => m.model_name.startsWith('whisper')) ?? [];
   const llmModels = modelStatus?.models.filter((m) => m.model_name.startsWith('qwen3-')) ?? [];

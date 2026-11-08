@@ -63,11 +63,19 @@ import { SampleList } from './SampleList';
 const MAX_AUDIO_DURATION_SECONDS = 30;
 const MAX_DESIGN_PROMPT_LENGTH = 500;
 /** Engines that can't be a default for a sample-based (cloned) profile. */
-const PRESET_ONLY_ENGINES = new Set(['kokoro', 'qwen_custom_voice', 'qwen_voice_design']);
-/** The engine a designed profile is created against. */
-const DESIGN_ENGINE = 'qwen_voice_design';
+const PRESET_ONLY_ENGINES = new Set([
+  'kokoro',
+  'qwen_custom_voice',
+  'qwen_voice_design',
+  'indic_parler',
+]);
+/** The engine a designed profile is created against: Qwen for English, Indic Parler-TTS otherwise. */
+const designEngineFor = (language: string) =>
+  language === 'en' ? 'qwen_voice_design' : 'indic_parler';
 const DEFAULT_ENGINE_OPTIONS = [
   { value: 'indicf5', label: 'IndicF5 (Indian languages)' },
+  { value: 'dhvaani', label: 'DhVaani (fast, Indian languages)' },
+  { value: 'indic_parler', label: 'Indic Parler-TTS' },
   { value: 'qwen', label: 'Qwen3-TTS' },
   { value: 'qwen_custom_voice', label: 'Qwen CustomVoice' },
   { value: 'qwen_voice_design', label: 'Qwen VoiceDesign' },
@@ -621,7 +629,7 @@ export function ProfileForm() {
           language: data.language,
           voice_type: 'designed' as VoiceType,
           design_prompt: trimmedDesign,
-          default_engine: DESIGN_ENGINE,
+          default_engine: designEngineFor(data.language),
           personality: data.personality?.trim() ? data.personality.trim() : undefined,
         });
 
