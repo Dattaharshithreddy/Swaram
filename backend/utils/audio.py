@@ -73,7 +73,7 @@ def load_audio(
     return audio, sr
 
 
-def _decode_with_ffmpeg(path: str, sample_rate: int, mono: bool) -> Optional[np.ndarray]:
+def _decode_with_ffmpeg(path: str, sample_rate: int, mono: bool) -> np.ndarray | None:
     """Decode any format ffmpeg understands to float32 PCM; None without ffmpeg."""
     import subprocess
 

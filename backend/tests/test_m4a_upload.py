@@ -32,7 +32,7 @@ def test_load_audio_reads_m4a(phone_clip):
 
 
 def test_reference_validation_accepts_m4a(phone_clip):
-    ok, err, audio, sr = validate_and_load_reference_audio(str(phone_clip))
+    ok, err, audio, _sr = validate_and_load_reference_audio(str(phone_clip))
     assert ok, err
     assert audio is not None
 
@@ -40,5 +40,5 @@ def test_reference_validation_accepts_m4a(phone_clip):
 def test_unreadable_file_still_errors(tmp_path):
     bad = tmp_path / "x.m4a"
     bad.write_bytes(b"not audio")
-    with pytest.raises(Exception):  # noqa: B017 - any decode error is fine
+    with pytest.raises(ValueError, match="Could not read this audio file"):
         load_audio(str(bad))
