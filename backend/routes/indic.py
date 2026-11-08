@@ -190,3 +190,138 @@ async def dub_srt(
             "Access-Control-Expose-Headers": "X-Swaram-Report",
         },
     )
+
+
+# ─── Voice design, engine comparison, speed preset ────────────────────────
+
+
+class QualityBody(BaseModel):
+    quality: str = Field(..., pattern="^(fast|balanced|studio)$")
+
+
+@router.get("/indic/quality")
+async def get_quality_preset():
+    """Speed/quality preset used by IndicF5 and DhVaani."""
+    from ..utils.quality import PRESETS, get_quality
+
+    return {"quality": get_quality(), "presets": list(PRESETS)}
+
+
+@router.put("/indic/quality")
+async def put_quality_preset(body: QualityBody):
+    from ..utils.quality import set_quality
+
+    return {"quality": set_quality(body.quality)}
+
+
+class DesignPreviewBody(BaseModel):
+    description: str = Field(..., min_length=3, max_length=2000)
+    language: str = Field(default="te")
+    text: str | None = Field(None, max_length=2000)
+    speaker: str | None = Field(None, max_length=50)
+    seed: int | None = Field(None, ge=0)
+
+
+class DesignBody(DesignPreviewBody):
+    name: str = Field(..., min_length=1, max_length=100)
+    lock: bool = True
+    lock_engine: str | None = Field(None, pattern="^(indicf5|dhvaani|chatterbox|qwen|omnivoice)$")
+    preview_id: str | None = Field(None, pattern=r"^preview-[0-9a-f]{10}\.wav$")
+
+
+class CompareBody(BaseModel):
+    profile: str
+    text: str = Field(..., min_length=1, max_length=5000)
+    language: str | None = None
+    engines: list[str] | None = None
+
+
+def _design_dir(kind: str):
+    from pathlib import Path
+
+    from .. import config
+
+    return Path(config.get_generations_dir()) / kind
+
+
+@router.post("/indic/design/preview")
+async def design_preview(body: DesignPreviewBody):
+    """Render a described voice to a WAV without saving a profile."""
+    from ..services import voice_design
+
+    _require_language(body.language)
+    try:
+        res = await voice_design.preview_voice(
+            body.description, body.language, text=body.text, speaker=body.speaker, seed=body.seed
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    from pathlib import Path
+
+    res["preview_id"] = Path(res.pop("audio_path")).name
+    res["audio_url"] = f"/indic/design/audio/previews/{res['preview_id']}"
+    return res
+
+
+@router.post("/indic/design")
+async def design_save(body: DesignBody, db: Session = Depends(get_db)):
+    """Save a described voice; lock=true turns it into a cloned voice."""
+    from ..services import voice_design
+
+    _require_language(body.language)
+    preview_path = str(_design_dir("previews") / body.preview_id) if body.preview_id else None
+    try:
+        res = await voice_design.design_voice(
+            db,
+            name=body.name,
+            description=body.description,
+            language=body.language,
+            speaker=body.speaker,
+            lock=body.lock,
+            lock_engine=body.lock_engine,
+            sample_text=body.text,
+            seed=body.seed,
+            preview_audio_path=preview_path,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    res.pop("sample_audio_path", None)
+    return res
+
+
+@router.get("/indic/design/audio/{kind}/{name}")
+async def design_audio(kind: str, name: str):
+    """Serve a preview or comparison WAV."""
+    import re
+
+    from fastapi.responses import FileResponse
+
+    if kind not in ("previews", "compare") or not re.fullmatch(r"[A-Za-z0-9_\-]+\.wav", name):
+        raise HTTPException(status_code=404, detail="Not found")
+    path = _design_dir(kind) / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@router.post("/indic/compare")
+async def compare(body: CompareBody, db: Session = Depends(get_db)):
+    """Render the same text with several engines for one voice, with timings."""
+    from pathlib import Path
+
+    from ..services import voice_design
+    from ..services.profiles import get_profile_orm_by_name_or_id
+
+    profile = get_profile_orm_by_name_or_id(body.profile, db)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"Voice not found: {body.profile}")
+    language = body.language or profile.language or "te"
+    _require_language(language)
+    engines = body.engines or (["indicf5", "dhvaani"] if language != "en" else ["chatterbox", "qwen"])
+    results = await voice_design.compare_engines(
+        db, profile_id=profile.id, text=body.text, language=language, engines=engines
+    )
+    for r in results:
+        if r.get("audio_path"):
+            r["audio_url"] = f"/indic/design/audio/compare/{Path(r.pop('audio_path')).name}"
+    return {"profile": profile.name, "language": language, "results": results}

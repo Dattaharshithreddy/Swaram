@@ -327,6 +327,11 @@ async def generate_chunked(
 
     chunks = split_text_into_chunks(text, max_chunk_chars)
 
+    if getattr(backend, "batches_long_text", False) and runaway_detector is None:
+        # Engines that split and batch internally (IndicF5, DhVaani) are
+        # much faster given the whole text at once than chunk by chunk.
+        return await generate_one(text, seed)
+
     if len(chunks) <= 1:
         # Short text — single-shot fast path
         return await generate_one(text, seed)

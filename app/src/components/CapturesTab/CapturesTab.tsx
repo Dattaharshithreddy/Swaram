@@ -286,6 +286,8 @@ export function CapturesTab() {
         | 'kokoro'
         | 'omnivoice'
         | 'indicf5'
+        | 'dhvaani'
+        | 'indic_parler'
         | undefined;
       return apiClient.generateSpeech({
         profile_id: voice.id,

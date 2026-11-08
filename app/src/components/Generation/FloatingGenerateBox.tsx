@@ -155,7 +155,9 @@ export function FloatingGenerateBox({
     | 'qwen_custom_voice'
     | 'qwen_voice_design'
     | 'omnivoice'
-    | 'indicf5';
+    | 'indicf5'
+    | 'dhvaani'
+    | 'indic_parler';
   useEffect(() => {
     if (selectedProfile?.language) {
       form.setValue('language', selectedProfile.language as LanguageCode);

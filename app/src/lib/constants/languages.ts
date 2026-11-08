@@ -51,6 +51,8 @@ export const ENGINE_LANGUAGES: Record<string, readonly LanguageCode[]> = {
   qwen_voice_design: ['en'],
   omnivoice: ['en', ...INDIC_LANGUAGES],
   indicf5: INDIC_LANGUAGES,
+  dhvaani: INDIC_LANGUAGES,
+  indic_parler: ['en', ...INDIC_LANGUAGES],
 } as const;
 
 /** Helper: get language options for a given engine. */

@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastmcp import FastMCP
 
 from .context import ClientIdMiddleware
+from .swaram_tools import register_swaram_tools
 from .tools import register_tools
 
 
@@ -25,15 +26,21 @@ logger = logging.getLogger(__name__)
 def build_mcp_server() -> FastMCP:
     """Create the FastMCP instance with Voicebox tools registered."""
     mcp = FastMCP(
-        name="voicebox",
+        name="swaram",
         instructions=(
-            "Voicebox is a local voice I/O layer. Use `voicebox_speak` to "
-            "play text in a voice profile, `voicebox_transcribe` for "
-            "audio→text, and the `list_*` tools to discover profiles and "
-            "captures."
+            "Swaram clones and designs voices in English and 11 Indian "
+            "languages. To create a voice from a description: call "
+            "`swaram_voice_design_guide`, audition with `swaram_preview_voice`, "
+            "save with `swaram_design_voice` (lock=true keeps the voice "
+            "identical across lines). To clone from a recording use "
+            "`swaram_clone_voice`. Read text with `swaram_speak` (returns the "
+            "WAV). Write Indian-language text in its own script. "
+            "`voicebox_transcribe` turns audio into text. Only clone a real "
+            "person's voice with their consent."
         ),
     )
     register_tools(mcp)
+    register_swaram_tools(mcp)
     return mcp
 
 

@@ -21,6 +21,56 @@
 
 Everything else (voice profiles, Whisper transcription, effects, stories, MCP and REST APIs, the desktop app) is Voicebox, unchanged.
 
+## Faster IndicF5, two new native engines, and voice design from Claude
+
+**Faster IndicF5, same weights.** Swaram now drives IndicF5's model directly instead of through its stock wrapper:
+
+- every sentence of a request goes through the model **in one batch** instead of one after another,
+- the reference clip is prepared once per voice and cached,
+- half precision on NVIDIA GPUs (RTX 20-series and newer; `SWARAM_F5_FP32=1` turns it off, and a batch that comes back broken is redone in full precision automatically),
+- Hindi, Marathi and other Devanagari text is now split at `।`, so long paragraphs no longer reach the model as one oversized chunk (the usual cause of skipped words),
+- a speed/quality preset: `fast` (16 steps), `balanced` (24, default), `studio` (32, the old behaviour). Set it with `SWARAM_QUALITY=fast`, `PUT /indic/quality`, or by asking Claude.
+
+`SWARAM_F5_STOCK=1` switches back to the original call if the remote model code ever changes.
+
+**New engines (both free, Apache-2.0, built by Indian research labs):**
+
+| Engine | What it does | Why |
+|---|---|---|
+| **DhVaani** (`dhvaani`, ARTPARK, IISc) | clones a voice from a 3-10 s clip + transcript in 27 Indian languages, including all 11 here | ~0.1B parameters vs IndicF5's 0.4B, no doubled guidance pass: several times faster per line. Gated download: accept the terms at https://huggingface.co/ARTPARK-IISc/DhVaani-0.5 |
+| **Indic Parler-TTS** (`indic_parler`, AI4Bharat) | **creates a voice from a written description**, no recording needed, in English + 11 Indian languages | voice design for Indian languages (Qwen VoiceDesign is English only). Gated: accept the terms at https://huggingface.co/ai4bharat/indic-parler-tts, then run `just setup-parler` once (it needs its own Python environment) |
+
+There is no published head-to-head of IndicF5 and DhVaani yet, so IndicF5 stays the default cloner. Use `POST /indic/compare` (or ask Claude to "compare engines on my voice") to hear both, with timings, and set the faster one as a voice's default engine if it sounds as good to you.
+
+**Designed voices that stay the same.** Indic Parler-TTS picks a slightly different voice on every call. Saving a description with `lock=true` (the default) renders a short sample once and saves it as a cloned voice, so IndicF5 or DhVaani then read every line in exactly that voice.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/indic/design/preview` | description → WAV to audition (nothing saved) |
+| POST | `/indic/design` | save a described voice (`lock`, `lock_engine`, optional `preview_id` from a preview) |
+| POST | `/indic/compare` | one voice, several engines, render time and real-time factor for each |
+| GET / PUT | `/indic/quality` | `fast` / `balanced` / `studio` |
+
+### Use Swaram from Claude (MCP)
+
+Start the server (`just dev`, or the GPU server from `deploy/`), then add it to Claude Code:
+
+```bash
+claude mcp add --transport http swaram http://127.0.0.1:17493/mcp --header "X-Voicebox-Client-Id: claude-code"
+```
+
+For a remote server with `SWARAM_API_KEY` set, also pass `--header "Authorization: Bearer <key>"` and use its URL. Claude Desktop setup and the full tool list are in [backend/mcp_server/README.md](backend/mcp_server/README.md).
+
+Then just ask, for example:
+
+> Make me a Telugu voice for kids' bedtime stories: a gentle, warm woman's voice, a little slow. Give me three to choose from.
+
+> Save the second one as "Ammamma" and read this story in it: …
+
+> Compare IndicF5 and DhVaani on Ammamma with this paragraph.
+
+Claude writes the voice description, auditions variants (`swaram_preview_voice`), saves the one you pick (`swaram_design_voice`), and reads text in it (`swaram_speak`, which returns the finished WAV).
+
 ## Clone voices from a phone (no laptop, no graphics card)
 
 Voice cloning needs a GPU, so the phone app sends the work to a Swaram server
@@ -37,7 +87,9 @@ On a public server, `SWARAM_API_KEY` must be sent with every request (`Authoriza
 
 | Engine | Languages | Licence of weights | Use for |
 |---|---|---|---|
-| **IndicF5** (new) | hi, te, ta, kn, ml, mr, bn, gu, or, pa, as | MIT (gated download) | Indian-language cloning, **commercial OK** |
+| **IndicF5** | hi, te, ta, kn, ml, mr, bn, gu, or, pa, as | MIT (gated download) | Indian-language cloning, **commercial OK** |
+| **DhVaani** (new) | all 11 Indian languages (27 in total) | Apache-2.0 (gated download) | fast Indian-language cloning, **commercial OK** |
+| **Indic Parler-TTS** (new) | en + all 11 Indian | Apache-2.0 (gated download) | voices from a written description, **commercial OK** |
 | OmniVoice | en + all 11 Indian | CC-BY-NC | personal / testing only |
 | Chatterbox | en, hi | MIT | English and Hindi cloning |
 | Kokoro | en, hi | Apache-2.0 | fast preset voices |

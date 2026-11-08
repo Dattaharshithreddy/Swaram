@@ -316,6 +316,9 @@ def build_server(cuda=False, rocm=False):
             # f5_tts at runtime, so collect the whole package.
             "--hidden-import",
             "backend.backends.indicf5_backend",
+            "backend.backends.f5_fast",
+            "backend.backends.dhvaani_backend",
+            "backend.backends.indic_parler_backend",
             "--collect-all",
             "f5_tts",
             "--collect-submodules",
