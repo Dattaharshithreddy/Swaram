@@ -30,6 +30,22 @@ export interface ModelStatus {
   size_mb: number | null;
 }
 
+export type Quality = 'fast' | 'balanced' | 'studio';
+
+/** Engines that clone a voice on the server. */
+export type CloneEngine = 'indicf5' | 'dhvaani' | 'chatterbox';
+
+export interface DesignPreview {
+  preview_id: string;
+  audio_url: string;
+  description: string;
+  text: string;
+  seconds: number;
+  render_seconds: number;
+  /** Local copy of the preview audio, for playback. */
+  uri: string;
+}
+
 export interface Health {
   status: string;
   gpu_available: boolean;
@@ -85,6 +101,20 @@ async function request<T>(cfg: ServerConfig, path: string, init: RequestInit = {
   return (await res.json()) as T;
 }
 
+/** Download an audio file from the server (with the API key) to a local file. */
+async function fetchAudio(cfg: ServerConfig, path: string, name: string): Promise<File> {
+  let res: Response;
+  try {
+    res = await fetch(normalizeUrl(cfg.url) + path, { headers: headers(cfg, { Accept: '*/*' }) });
+  } catch {
+    throw new ApiError('Could not reach the server. Check your internet and the server URL.', 0);
+  }
+  if (!res.ok) throw await readError(res);
+  const file = new File(Paths.cache, name);
+  await file.write(new Uint8Array(await res.arrayBuffer()));
+  return file;
+}
+
 export const api = {
   health: (cfg: ServerConfig) => request<Health>(cfg, '/health'),
 
@@ -118,6 +148,54 @@ export const api = {
     });
     return res;
   },
+
+  /** Speed/quality preset the server uses for IndicF5 and DhVaani. */
+  getQuality: async (cfg: ServerConfig) => (await request<{ quality: Quality }>(cfg, '/indic/quality')).quality,
+
+  setQuality: async (cfg: ServerConfig, quality: Quality) =>
+    (
+      await request<{ quality: Quality }>(cfg, '/indic/quality', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quality }),
+      })
+    ).quality,
+
+  /** Render a voice from a written description (Indic Parler-TTS). Nothing is saved. */
+  previewDesign: async (
+    cfg: ServerConfig,
+    opts: { description: string; language: LanguageCode; speaker?: string; seed?: number; text?: string },
+  ): Promise<DesignPreview> => {
+    const res = await request<Omit<DesignPreview, 'uri'>>(cfg, '/indic/design/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts),
+    });
+    const file = await fetchAudio(cfg, res.audio_url, res.preview_id);
+    return { ...res, uri: file.uri };
+  },
+
+  /**
+   * Save a described voice. It is "locked": the chosen preview becomes the
+   * voice's reference clip, so every line keeps exactly this voice.
+   */
+  saveDesign: (
+    cfg: ServerConfig,
+    opts: { name: string; description: string; language: LanguageCode; previewId: string; engine: CloneEngine; text: string },
+  ) =>
+    request<{ profile: VoiceProfile }>(cfg, '/indic/design', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: opts.name,
+        description: opts.description,
+        language: opts.language,
+        preview_id: opts.previewId,
+        lock: true,
+        lock_engine: opts.engine,
+        text: opts.text,
+      }),
+    }),
 
   /** Create a cloned voice: profile first, then its reference sample. */
   createVoice: async (
@@ -200,4 +278,10 @@ export const REQUIRED_MODELS = [
   { model: 'indicf5', label: 'IndicF5 (Indian languages)' },
   { model: 'whisper-turbo', label: 'Whisper (transcription)' },
   { model: 'chatterbox-tts', label: 'Chatterbox (English)' },
+];
+
+/** Optional models: faster cloning and describing a voice in words. */
+export const OPTIONAL_MODELS = [
+  { model: 'dhvaani', label: 'DhVaani (faster cloning)' },
+  { model: 'indic-parler-tts', label: 'Indic Parler-TTS (describe a voice)' },
 ];

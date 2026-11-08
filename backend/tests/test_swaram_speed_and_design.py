@@ -345,3 +345,49 @@ def test_mcp_server_exposes_swaram_tools():
     ):
         assert name in names, name
     assert all(len(n) <= 64 and "." not in n for n in names)
+
+
+def test_rest_preview_then_save_locks_the_chosen_take(test_db, fake_designer):
+    """The phone app's flow: POST /indic/design/preview, then /indic/design with preview_id."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.database import ProfileSample, get_db
+    from backend.routes.indic import router
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_db] = lambda: test_db
+    client = TestClient(app)
+
+    prev = client.post("/indic/design/preview", json={"description": "a warm calm voice", "language": "te"})
+    assert prev.status_code == 200, prev.text
+    body = prev.json()
+    assert body["audio_url"].endswith(body["preview_id"])
+    audio = client.get(body["audio_url"])
+    assert audio.status_code == 200
+    assert audio.headers["content-type"] == "audio/wav"
+
+    saved = client.post(
+        "/indic/design",
+        json={
+            "name": "Ammamma",
+            "description": body["description"],
+            "language": "te",
+            "preview_id": body["preview_id"],
+            "lock_engine": "dhvaani",
+            "text": body["text"],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    res = saved.json()
+    assert res["profile"]["default_engine"] == "dhvaani"
+    assert len(fake_designer) == 1  # the preview only; saving reused it
+    sample = test_db.query(ProfileSample).filter_by(profile_id=res["profile"]["id"]).one()
+    assert sample.reference_text == body["text"]
+
+    bad = client.post(
+        "/indic/design",
+        json={"name": "X", "description": "y", "language": "te", "preview_id": "../../etc/passwd"},
+    )
+    assert bad.status_code == 422

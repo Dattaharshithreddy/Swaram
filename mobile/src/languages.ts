@@ -57,6 +57,15 @@ export function engineFor(code: LanguageCode): string {
   return code === 'en' ? 'chatterbox' : 'indicf5';
 }
 
+/** Cloning engines the user can pick for a language, best-known quality first. */
+export function cloneEnginesFor(code: LanguageCode): { key: 'indicf5' | 'dhvaani' | 'chatterbox'; label: string; hint: string }[] {
+  if (code === 'en') return [{ key: 'chatterbox', label: 'Chatterbox', hint: 'English cloning' }];
+  return [
+    { key: 'indicf5', label: 'IndicF5', hint: 'Best-known quality' },
+    { key: 'dhvaani', label: 'DhVaani', hint: 'Several times faster' },
+  ];
+}
+
 /** Whisper has no Odia model, so Odia transcripts must be typed. */
 export function canTranscribe(code: LanguageCode): boolean {
   return code !== 'or';

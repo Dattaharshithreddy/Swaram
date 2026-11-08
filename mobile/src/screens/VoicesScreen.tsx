@@ -4,6 +4,7 @@ import { api, type ServerConfig, type VoiceProfile } from '../api';
 import { Body, Button, Card, Label, Notice, Title } from '../components/ui';
 import { languageByCode } from '../languages';
 import { space, useTheme } from '../theme';
+import { DesignVoiceScreen } from './DesignVoiceScreen';
 import { NewVoiceScreen } from './NewVoiceScreen';
 import { friendlyError } from '../errors';
 
@@ -21,17 +22,18 @@ export function VoicesScreen({
   reload: () => void;
 }) {
   const t = useTheme();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<'clone' | 'design' | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (creating) {
+    const Screen = creating === 'design' ? DesignVoiceScreen : NewVoiceScreen;
     return (
-      <NewVoiceScreen
+      <Screen
         config={config}
-        onCancel={() => setCreating(false)}
+        onCancel={() => setCreating(null)}
         onDone={() => {
-          setCreating(false);
+          setCreating(null);
           reload();
         }}
       />
@@ -58,7 +60,13 @@ export function VoicesScreen({
       ListHeaderComponent={
         <View style={{ gap: space.md, marginBottom: space.sm }}>
           <Title>Voices</Title>
-          <Button title="+ Clone a new voice" onPress={() => setCreating(true)} disabled={!config.url} />
+          <Button title="+ Clone a new voice" onPress={() => setCreating('clone')} disabled={!config.url} />
+          <Button
+            title="+ Describe a new voice"
+            kind="secondary"
+            onPress={() => setCreating('design')}
+            disabled={!config.url}
+          />
           {!config.url && <Notice text="Connect to your server in Settings first." />}
           {error && <Notice text={error} kind="error" />}
           {deleteError && <Notice text={deleteError} kind="error" />}
@@ -67,7 +75,7 @@ export function VoicesScreen({
       ListEmptyComponent={
         !loading && config.url && !error ? (
           <Card>
-            <Body muted>No voices yet. Clone one from a 5-12 second recording.</Body>
+            <Body muted>No voices yet. Clone one from a 5-12 second recording, or describe one in words.</Body>
           </Card>
         ) : undefined
       }
