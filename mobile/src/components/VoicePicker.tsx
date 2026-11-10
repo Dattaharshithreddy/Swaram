@@ -46,7 +46,13 @@ export function VoicePicker({
                 </View>
                 <View style={{ flex: 1, gap: 4 }}>
                   <Text style={{ color: t.ink, fontFamily: font.semibold, fontSize: 15 }}>{v.voice.name}</Text>
-                  {v.kind === 'fast' ? <Badge text="Fast voice" kind="gold" icon="zap" /> : <Badge text="Big model" />}
+                  {v.kind === 'fast' ? (
+                    <Badge text="Fast voice" kind="gold" icon="zap" />
+                  ) : v.kind === 'server' ? (
+                    <Badge text="GPU server · best quality" kind="ok" icon="cloud" />
+                  ) : (
+                    <Badge text="Big model" />
+                  )}
                 </View>
                 {on && <Icon name="check" color={t.accent} />}
               </Pressable>

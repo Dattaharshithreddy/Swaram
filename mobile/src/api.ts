@@ -340,21 +340,26 @@ export const api = {
     return profile;
   },
 
-  /** Speech from a server voice as a WAV file, with its length (for Home and Recent). */
-  speakWav: async (cfg: ServerConfig, voiceId: string, text: string): Promise<{ file: File; seconds: number }> => {
+  /** Speech from a server voice as WAV bytes (Studio lines decode these). */
+  speakWavBytes: async (cfg: ServerConfig, voiceId: string, text: string, speed = 1): Promise<Uint8Array> => {
     if (!cfg.url) throw new ApiError('Add your server URL first.', 0);
     let res: Response;
     try {
       res = await fetch(`${normalizeUrl(cfg.url)}/v1/audio/speech`, {
         method: 'POST',
         headers: headers(cfg, { 'Content-Type': 'application/json', Accept: '*/*' }),
-        body: JSON.stringify({ model: 'tts-1', voice: voiceId, input: text, response_format: 'wav' }),
+        body: JSON.stringify({ model: 'tts-1', voice: voiceId, input: text, response_format: 'wav', speed }),
       });
     } catch (err) {
       throw new ApiError(networkMessage(err), 0);
     }
     if (!res.ok) throw await readError(res);
-    const bytes = new Uint8Array(await res.arrayBuffer());
+    return new Uint8Array(await res.arrayBuffer());
+  },
+
+  /** Speech from a server voice as a WAV file, with its length (for Home and Recent). */
+  speakWav: async (cfg: ServerConfig, voiceId: string, text: string): Promise<{ file: File; seconds: number }> => {
+    const bytes = await api.speakWavBytes(cfg, voiceId, text);
     const file = new File(Paths.document, `swaram-server-${Date.now()}.wav`);
     await file.write(bytes);
     return { file, seconds: wavSeconds(bytes) };

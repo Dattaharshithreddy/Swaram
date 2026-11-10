@@ -7,9 +7,10 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type VoiceProfile } from './api';
+import { rememberServerVoices, SERVER_PREFIX } from './edge/serverVoices';
 import { useServerConfig } from './settings';
 
-export const SERVER_PREFIX = 'server:';
+export { SERVER_PREFIX };
 
 export function serverKey(v: VoiceProfile): string {
   return `${SERVER_PREFIX}${v.id}`;
@@ -27,7 +28,9 @@ export function useServerVoices() {
       return;
     }
     try {
-      setVoices(await api.listVoices(config));
+      const list = await api.listVoices(config);
+      rememberServerVoices(list);
+      setVoices(list);
       setReachable(true);
     } catch {
       setVoices([]);

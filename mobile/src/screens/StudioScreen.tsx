@@ -39,6 +39,8 @@ import { studioInstalled } from '../edge/store';
 import { effectiveSteps, guidanceFor, QUALITY, SPEEDS, useApp } from '../state';
 import { font, radius, space, speakerColors, useTheme } from '../theme';
 import { friendlyError } from '../errors';
+import { useServerVoices } from '../serverVoices';
+import { serverRefs } from '../edge/serverVoices';
 import { cloudParts } from '../edge/kaggleRender';
 
 const EXAMPLE = `Narrator (calm): అలా ఆ రోజు ఉదయం మొదలైంది.
@@ -50,6 +52,7 @@ Narrator (serious): ఆ మాటతో కథ కొత్త మలుపు �
 
 /** True when the voice has a real recording (or learned token) for the emotion; else the style fallback is used. */
 function emotionSupport(v: VoiceRef, e: Emotion): boolean {
+  if (v.kind === 'server') return false; // the server uses the speed/loudness style for emotions
   return v.kind === 'f5' ? !!v.voice.emotions?.[e] : (v.voice.emotions ?? []).includes(e);
 }
 
@@ -162,7 +165,10 @@ function CloudRender({ job, disabled }: { job: ScriptJob; disabled: boolean }) {
 export function StudioScreen() {
   const t = useTheme();
   const app = useApp();
-  const { voices, prefs, updatePrefs, running } = app;
+  const { prefs, updatePrefs, running } = app;
+  const server = useServerVoices();
+  // Phone voices plus ☁ server voices (only while the server answers).
+  const voices = useMemo(() => [...app.voices, ...serverRefs(server.voices)], [app.voices, server.voices]);
   const [view, setView] = useState<'write' | 'lines' | 'dub'>('write');
   const [srt, setSrt] = useState<{ name: string; text: string } | null>(null);
   const [sounds, setSounds] = useState<Sound[]>(() => listSounds());
@@ -825,7 +831,7 @@ function JobLines({ job }: { job: ScriptJob }) {
       <VoicePicker
         visible={picker !== null}
         title="Voice for this line"
-        voices={app.voices}
+        voices={[...app.voices, ...serverRefs()]}
         selectedKey={picker !== null ? job.parts[picker].voice : undefined}
         onPick={(v) => {
           if (picker === null) return;

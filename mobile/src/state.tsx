@@ -37,6 +37,7 @@ import { downloadModel, downloadStudio, loadEmotionData, loadVoiceData, modelDir
 import { type Emotion, EMOTION_STYLE } from './edge/emotions';
 import { parseScript } from './edge/script';
 import { prepareText } from './edge/telugu';
+import { serverMaker, serverRefs } from './edge/serverVoices';
 import { displayName, keyOf, listAllVoices, type VoiceRef } from './edge/voices';
 import { spokenText } from './translit';
 import { friendlyError } from './errors';
@@ -199,14 +200,17 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
         const cacheKey = `${key}|${emotion ?? ''}|${speedMul.toFixed(2)}`;
         const hit = cache.get(cacheKey);
         if (hit) return hit;
-        const ref = listAllVoices().find((r) => keyOf(r) === key);
+        const ref = [...listAllVoices(), ...serverRefs()].find((r) => keyOf(r) === key);
         if (!ref) throw new Error('A voice in this script was deleted. Pick another voice for its lines.');
         // A line with an emotion uses the voice's recording in that tone; without one,
         // speed and loudness are adjusted instead (EMOTION_STYLE).
         const style = emotion ? EMOTION_STYLE[emotion] : null;
         const base = { ...opts, speed: opts.speed * speedMul };
         let maker: PartMaker;
-        if (ref.kind === 'fast') {
+        if (ref.kind === 'server') {
+          // Made on the GPU server. Emotions use the speed and loudness style there.
+          maker = withGain(serverMaker(ref.voice, base.speed * (style?.speed ?? 1)), style?.gain ?? 1);
+        } else if (ref.kind === 'fast') {
           const fv = await getFast(ref.voice);
           maker = fv.knows(emotion)
             ? fastMaker(fv, base.speed, emotion)
@@ -248,7 +252,9 @@ export function AppProvider({ children, initialTab = 'home' }: { children: React
       const pieces: { text: string; emotion: Emotion | null; pause: number }[] = [];
       for (const seg of parseScript(text)) {
         const prepared = prepare(seg.text, ref.voice.language);
-        const chunks = (ref.kind === 'fast' ? chunkText(prepared, 400) : chunksFor(ref.voice, prepared)).filter((c) => c.trim());
+        const chunks = (
+          ref.kind === 'server' ? chunkText(prepared, 600) : ref.kind === 'fast' ? chunkText(prepared, 400) : chunksFor(ref.voice, prepared)
+        ).filter((c) => c.trim());
         chunks.forEach((c, i) =>
           pieces.push({ text: c, emotion: seg.emotion, pause: i === chunks.length - 1 ? seg.pauseAfter * (seg.emotion ? EMOTION_STYLE[seg.emotion].pause : 1) : 0 }),
         );
