@@ -68,6 +68,10 @@ jobs:
       - name: Notebook is up to date
         working-directory: personal-voice
         run: python make_notebook.py && git diff --exit-code swaram_personal_voice.ipynb
+      - name: Practice sentences, pronunciation score and filter (no models)
+        run: |
+          pip install -q pytest
+          python -m pytest -q personal-voice/tests
       - name: Generate a few sentences with IndicF5 (CPU)
         working-directory: personal-voice
         run: |
