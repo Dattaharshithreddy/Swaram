@@ -92,6 +92,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
+          if (v.kind === 'server') return; // managed on the server page
           if (v.kind === 'fast') deletePersonal(v.voice);
           else {
             deleteVoice(v.voice);

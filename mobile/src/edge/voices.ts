@@ -7,7 +7,17 @@ import { EMOTIONS } from './emotions';
 import { importPersonal as importFast } from './personal';
 import { voicesDirectory } from './store';
 
-export type VoiceRef = { kind: 'f5'; voice: OfflineVoice } | { kind: 'fast'; voice: PersonalVoice };
+/** A voice on the user's GPU server (see edge/serverVoices.ts); Studio lines in it are made there. */
+export interface ServerVoice {
+  id: string;
+  name: string;
+  language: string;
+}
+
+export type VoiceRef =
+  | { kind: 'f5'; voice: OfflineVoice }
+  | { kind: 'fast'; voice: PersonalVoice }
+  | { kind: 'server'; voice: ServerVoice };
 
 export function keyOf(r: VoiceRef): string {
   return `${r.kind}:${r.voice.id}`;
@@ -25,7 +35,7 @@ export function findVoice(key: string | undefined, all = listAllVoices()): Voice
 }
 
 export function displayName(r: VoiceRef): string {
-  return r.kind === 'fast' ? `⚡ ${r.voice.name}` : r.voice.name;
+  return r.kind === 'fast' ? `⚡ ${r.voice.name}` : r.kind === 'server' ? `☁ ${r.voice.name}` : r.voice.name;
 }
 
 /** Matches a script's speaker label to a voice by name (case- and space-insensitive). */
@@ -51,6 +61,7 @@ function safe(name: string) {
 /** A voice as one file to send to someone (they import it in Voices). Returns its uri. */
 export async function exportVoice(r: VoiceRef): Promise<string> {
   const out = new File(Paths.cache, `swaram-voice-${safe(r.voice.name)}.zip`);
+  if (r.kind === 'server') throw new Error('A ☁ server voice lives on your GPU server and can’t be shared as a file.');
   if (out.exists) out.delete();
   if (r.kind === 'fast') {
     const d = new Directory(Paths.document, 'personal-voices', r.voice.id);

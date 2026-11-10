@@ -18,6 +18,7 @@ import { parseScript } from './script';
 import { soundFile, soundSlug } from './sounds';
 import { parseSrt } from './srt';
 import { displayName, findVoice, keyOf, listAllVoices, type VoiceRef } from './voices';
+import { serverRefs } from './serverVoices';
 
 /** Makes one part's audio (24 kHz); progress.done/total count steps for the bar. */
 export type PartMaker = (text: string, progress: { done: number; total: number }) => Promise<Float32Array>;
@@ -199,6 +200,8 @@ export function jobVoiceKeys(job: ScriptJob): string[] {
 }
 
 function splitForVoice(ref: VoiceRef, text: string): string[] {
+  // The server splits and batches long text itself, so its lines can be longer.
+  if (ref.kind === 'server') return chunkText(text, 600);
   return ref.kind === 'fast' ? chunkText(text, 400) : chunksFor(ref.voice, text);
 }
 
@@ -215,7 +218,7 @@ export function createScriptJob(
     prepare: (text: string, language: string) => string;
   },
 ): ScriptJob {
-  const all = listAllVoices();
+  const all = [...listAllVoices(), ...serverRefs()];
   const parts: JobPart[] = [];
   const voiceNames: Record<string, string> = {};
   for (const seg of parseScript(script)) {
@@ -275,7 +278,7 @@ export function createDubJob(
     prepare: (text: string, language: string) => string;
   },
 ): ScriptJob {
-  const all = listAllVoices();
+  const all = [...listAllVoices(), ...serverRefs()];
   const cues = parseSrt(srt);
   if (!cues.length) throw new Error('No subtitles found in this file. Use a .srt file.');
   const parts: JobPart[] = [];
@@ -321,7 +324,8 @@ export function createDubJob(
 
 function stepsFor(job: ScriptJob, part: JobPart): number {
   if (part.sound) return 1;
-  return part.voice.startsWith('fast:') ? 1 : job.steps;
+  // Fast and ☁ server lines are one step each; big-model lines take job.steps.
+  return part.voice.startsWith('fast:') || part.voice.startsWith('server:') ? 1 : job.steps;
 }
 
 async function makePart(job: ScriptJob, i: number, makerFor: MakerFor, progress: { done: number; total: number }) {
