@@ -141,6 +141,12 @@ _TE_SCALES = [
 ]
 
 
+def _before_scale(words: str) -> str:
+    """A count ending in one says "ఒక్క" before వేల/లక్షల/కోట్ల: 21000 is
+    "ఇరవై ఒక్క వేలు", not "ఇరవై ఒకటి వేలు"."""
+    return words[: -len("ఒకటి")] + "ఒక్క" if words.endswith(" ఒకటి") else words
+
+
 def telugu_number(n: int) -> str:
     """Spell out a non-negative integer the way it is spoken in Telugu.
 
@@ -157,7 +163,7 @@ def telugu_number(n: int) -> str:
             if count == 1:
                 head = one_whole if rest == 0 else one_joined
             else:
-                words = telugu_number(count)
+                words = _before_scale(telugu_number(count))
                 head = f"{words} {many_whole if rest == 0 else many_joined}"
             return head if rest == 0 else f"{head} {telugu_number(rest)}"
     return _te_below_1000(n)  # unreachable

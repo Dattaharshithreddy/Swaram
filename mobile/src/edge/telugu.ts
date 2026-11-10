@@ -39,6 +39,11 @@ function below1000(n: number): string {
   return rest === 0 ? whole : `${joined} ${below100(rest)}`;
 }
 
+/** A count ending in one says "ఒక్క" before వేల/లక్షల/కోట్ల (21000: "ఇరవై ఒక్క వేలు"). */
+function beforeScale(words: string): string {
+  return words.endsWith(' ఒకటి') ? `${words.slice(0, -'ఒకటి'.length)}ఒక్క` : words;
+}
+
 export function teluguNumber(n: number): string {
   if (n < 0) return `మైనస్ ${teluguNumber(-n)}`;
   if (n < 1000) return below1000(n);
@@ -47,7 +52,7 @@ export function teluguNumber(n: number): string {
       const count = Math.floor(n / value);
       const rest = n % value;
       const head =
-        count === 1 ? (rest === 0 ? oneWhole : oneJoined) : `${teluguNumber(count)} ${rest === 0 ? manyWhole : manyJoined}`;
+        count === 1 ? (rest === 0 ? oneWhole : oneJoined) : `${beforeScale(teluguNumber(count))} ${rest === 0 ? manyWhole : manyJoined}`;
       return rest === 0 ? head : `${head} ${teluguNumber(rest)}`;
     }
   }

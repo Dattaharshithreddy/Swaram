@@ -49,8 +49,17 @@ def wikipedia(n: int, seed: int = 0) -> list[str]:
     return out[:n]
 
 
+def practice(n: int, seed: int = 0) -> list[str]:
+    """Numbers, money, dates and English words in Telugu (extra_sentences.py)."""
+    import extra_sentences
+
+    return extra_sentences.sentences(n, seed)
+
+
 def sentences(n: int, seed: int = 0, timeout: float = 900) -> list[str]:
-    base = everyday()
+    # About an eighth of the set practises numbers, dates and English words,
+    # which Wikipedia lines (digits are filtered out) never cover.
+    base = list(dict.fromkeys(everyday() + practice(max(40, n // 8), seed)))
     if n <= len(base):
         return base[:n]
     # Wikipedia streaming can hang; give it a time limit (a daemon thread, so a stuck

@@ -111,6 +111,12 @@ for tone, wav, text in tones:
     for i in range(n):
         print(open(f"{WORK}/gen{i}.log").read()[-300:])
     assert all(p.returncode == 0 for p in procs), "Generation failed: see the log above"
+# Listen to every take and leave out the ones that don't say their sentence right
+# (a Telugu speech recogniser; about 10 minutes). Training goes ahead without it if it fails.
+try:
+    sh(f"cd {PV} && python check_pronunciation.py {DATA}")
+except Exception as e:
+    print("Pronunciation check skipped:", e)
 sh(f"cd {PV} && python dataset.py {DATA}")
 """),
     ("code", """# 4. Train the small fast model (TRAIN_HOURS)
