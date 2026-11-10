@@ -340,6 +340,26 @@ export const api = {
     return profile;
   },
 
+  /** Speech from a server voice as a WAV file, with its length (for Home and Recent). */
+  speakWav: async (cfg: ServerConfig, voiceId: string, text: string): Promise<{ file: File; seconds: number }> => {
+    if (!cfg.url) throw new ApiError('Add your server URL first.', 0);
+    let res: Response;
+    try {
+      res = await fetch(`${normalizeUrl(cfg.url)}/v1/audio/speech`, {
+        method: 'POST',
+        headers: headers(cfg, { 'Content-Type': 'application/json', Accept: '*/*' }),
+        body: JSON.stringify({ model: 'tts-1', voice: voiceId, input: text, response_format: 'wav' }),
+      });
+    } catch (err) {
+      throw new ApiError(networkMessage(err), 0);
+    }
+    if (!res.ok) throw await readError(res);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const file = new File(Paths.document, `swaram-server-${Date.now()}.wav`);
+    await file.write(bytes);
+    return { file, seconds: wavSeconds(bytes) };
+  },
+
   /**
    * Generate speech and save it to a local file. Uses the server's
    * OpenAI-compatible endpoint, which returns the audio directly.
@@ -375,6 +395,27 @@ export const api = {
     return file;
   },
 };
+
+/** Length of a PCM WAV in seconds, from its header (0 if it can't be read). */
+export function wavSeconds(bytes: Uint8Array): number {
+  if (bytes.length < 44) return 0;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tag = (at: number) => String.fromCharCode(bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]);
+  if (tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return 0;
+  let byteRate = 0;
+  for (let at = 12; at + 8 <= bytes.length; ) {
+    const id = tag(at);
+    const size = view.getUint32(at + 4, true);
+    if (id === 'fmt ') byteRate = view.getUint32(at + 16, true);
+    if (id === 'data') {
+      // Streamed WAVs may carry a placeholder size; fall back to what was received.
+      const dataBytes = size === 0 || size === 0xffffffff || at + 8 + size > bytes.length ? bytes.length - at - 8 : size;
+      return byteRate ? dataBytes / byteRate : 0;
+    }
+    at += 8 + size + (size % 2);
+  }
+  return 0;
+}
 
 /** Engine model names the server must have downloaded before cloning works. */
 export const REQUIRED_MODELS = [

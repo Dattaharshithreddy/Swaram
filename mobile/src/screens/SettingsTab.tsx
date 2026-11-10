@@ -256,7 +256,7 @@ export function SettingsTab() {
         <Card style={{ paddingVertical: 4 }}>
           <Row
             title={server.config.url ? 'Connected server' : 'Not set up'}
-            detail={server.config.url ? server.config.url.replace(/^https?:\/\//, '') : 'Only for instant results from voices that aren’t ⚡ fast yet. Everything else works offline.'}
+            detail={server.config.url ? server.config.url.replace(/^https?:\/\//, '') : 'Best-quality voices, describing a voice in words, and Claude. Everything else works offline.'}
             onPress={() => app.setPage({ name: 'server' })}
             last
           />

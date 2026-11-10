@@ -15,6 +15,7 @@ import { languageByCode } from '../languages';
 import { useApp } from '../state';
 import { font, space, useTheme } from '../theme';
 import { friendlyError } from '../errors';
+import { useServerVoices } from '../serverVoices';
 
 const AVATAR = [
   { bg: '#2B1A2E', fg: '#F0A6D8' },
@@ -293,6 +294,7 @@ function VoiceCard({ v, index }: { v: VoiceRef; index: number }) {
 export function VoicesTab() {
   const t = useTheme();
   const app = useApp();
+  const server = useServerVoices();
   const [error, setError] = useState<string | null>(null);
 
   async function importFast() {
@@ -369,6 +371,30 @@ export function VoicesTab() {
         </Card>
       ) : (
         app.voices.map((v, i) => <VoiceCard key={keyOf(v)} v={v} index={i} />)
+      )}
+      {server.configured && (
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ color: t.ink, fontFamily: font.bold, fontSize: 15 }}>☁ On your GPU server</Text>
+              <Text style={{ color: t.soft, fontFamily: font.medium, fontSize: 12 }}>
+                {server.reachable === false
+                  ? 'Server is off. Start it to use these voices.'
+                  : server.voices.length
+                    ? 'Best quality, a few seconds per line. Pick them in Home.'
+                    : 'No voices there yet. Clone or describe one.'}
+              </Text>
+            </View>
+            <Button title="Manage" small kind="secondary" onPress={() => app.setPage({ name: 'server' })} />
+          </View>
+          {server.voices.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {server.voices.map((v) => (
+                <Badge key={v.id} text={`${v.name} · ${languageByCode(v.language)?.name ?? v.language}`} icon="cloud" />
+              ))}
+            </View>
+          )}
+        </Card>
       )}
       <View style={{ gap: space.sm }}>
         <Button title="Import a shared voice (.zip)" icon="download" kind="secondary" onPress={importFast} />

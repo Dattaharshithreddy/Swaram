@@ -12,6 +12,9 @@ import { font, radius, space, useTheme } from '../theme';
 import { friendlyError } from '../errors';
 import { studioInstalled } from '../edge/store';
 import { expectedHours } from '../edge/kaggleTraining';
+import { api } from '../api';
+import { addRecent } from '../edge/recent';
+import { SERVER_PREFIX, serverKey, useServerVoices } from '../serverVoices';
 
 export function RecentRow({ item, onRemoved }: { item: RecentItem; onRemoved?: () => void }) {
   const t = useTheme();
@@ -76,8 +79,14 @@ export function HomeScreen() {
   const [showAll, setShowAll] = useState(false);
   const player = usePlayer();
 
-  const selected = voices.find((v) => keyOf(v) === prefs.defaultVoice) ?? voices[0];
-  const lang = languageByCode(selected?.voice.language);
+  const server = useServerVoices();
+  // A server voice is remembered as "server:<id>"; Studio ignores it and uses a phone voice.
+  const serverSelected = prefs.defaultVoice?.startsWith(SERVER_PREFIX)
+    ? server.voices.find((v) => serverKey(v) === prefs.defaultVoice)
+    : undefined;
+  const selected = serverSelected ? undefined : (voices.find((v) => keyOf(v) === prefs.defaultVoice) ?? voices[0]);
+  const lang = languageByCode(serverSelected?.language ?? selected?.voice.language);
+  const anyVoice = voices.length > 0 || server.voices.length > 0;
   const activeTrainings = trainings.filter((x) => x.state === 'running');
 
   useEffect(() => {
@@ -85,10 +94,23 @@ export function HomeScreen() {
   }, [prefs.defaultVoice, voices, updatePrefs]);
 
   async function speak() {
-    if (!selected || !text.trim()) return;
+    if ((!selected && !serverSelected) || !text.trim()) return;
     setBusy(true);
     setError(null);
     try {
+      if (serverSelected) {
+        const { file, seconds } = await api.speakWav(server.config, serverSelected.id, app.prepare(text, serverSelected.language));
+        const item = addRecent({
+          uri: file.uri,
+          title: text.trim().split(/\s+/).slice(0, 10).join(' '),
+          voiceName: `☁ ${serverSelected.name}`,
+          seconds,
+        });
+        app.refreshRecent();
+        await player.toggle(item.uri);
+        return;
+      }
+      if (!selected) return;
       const item = await app.speakQuick(selected, text, (done, total) => setProgress({ done, total }));
       await player.toggle(item.uri);
     } catch (e) {
@@ -105,6 +127,10 @@ export function HomeScreen() {
       <Badge text={`${voices.length} voice${voices.length === 1 ? '' : 's'}`} />
       {activeTrainings.length > 0 && <Badge text={`${activeTrainings.length} training`} kind="gold" icon="zap" />}
       {running && <Badge text="Making a script" kind="gold" icon="loader" />}
+      {server.configured && server.reachable === true && (
+        <Badge text={`☁ Server on · ${server.voices.length} voice${server.voices.length === 1 ? '' : 's'}`} kind="ok" icon="cloud" />
+      )}
+      {server.configured && server.reachable === false && <Badge text="☁ Server off" icon="cloud-off" />}
     </View>
   );
 
@@ -122,7 +148,7 @@ export function HomeScreen() {
       </View>
       {statusChips}
 
-      {!app.installed && voices.length === 0 ? (
+      {!app.installed && !anyVoice ? (
         <Card>
           <Empty
             icon="download-cloud"
@@ -131,7 +157,7 @@ export function HomeScreen() {
             action={<Button title="Go to Settings" icon="settings" onPress={() => app.setTab('settings')} style={{ marginTop: space.sm }} />}
           />
         </Card>
-      ) : voices.length === 0 ? (
+      ) : !anyVoice ? (
         <Card>
           <Empty
             icon="mic"
@@ -149,9 +175,12 @@ export function HomeScreen() {
                 key={keyOf(v)}
                 label={v.voice.name}
                 gold={v.kind === 'fast'}
-                selected={selected && keyOf(v) === keyOf(selected)}
+                selected={!!selected && keyOf(v) === keyOf(selected)}
                 onPress={() => updatePrefs({ defaultVoice: keyOf(v) })}
               />
+            ))}
+            {server.voices.map((v) => (
+              <Chip key={serverKey(v)} label={`☁ ${v.name}`} selected={serverSelected?.id === v.id} onPress={() => updatePrefs({ defaultVoice: serverKey(v) })} />
             ))}
             <Pressable
               accessibilityRole="button"
@@ -172,19 +201,25 @@ export function HomeScreen() {
             accessibilityLabel="Text to speak"
             style={{ minHeight: 96, maxHeight: 220, textAlignVertical: 'top', borderRadius: radius.md, borderWidth: 1, borderColor: t.lineStrong, backgroundColor: t.field, color: t.ink, padding: 12, fontSize: 16, lineHeight: 26 }}
           />
-          {selected && <ReadAs text={text} language={selected.voice.language} onUse={setText} />}
+          {(selected || serverSelected) && (
+            <ReadAs text={text} language={serverSelected?.language ?? selected?.voice.language ?? 'te'} onUse={setText} />
+          )}
           {busy && <ProgressBar value={progress ? progress.done / Math.max(1, progress.total) : 0.03} />}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
             <Text style={{ color: t.soft, fontFamily: font.medium, fontSize: 12, flex: 1 }}>
-              {busy
+              {busy && serverSelected
+                ? 'Making it on your GPU server…'
+                : busy
                 ? app.engineLoading
                   ? 'Loading the model…'
                   : 'Making it on this phone…'
-                : selected?.kind === 'fast'
+                : serverSelected
+                  ? '☁ GPU server · a few seconds'
+                  : selected?.kind === 'fast'
                   ? `${displayName(selected)} · about a second`
                   : `Big model · ${prefs.steps === 8 ? 'Fast' : prefs.steps === 16 ? 'Balanced' : 'Best'} · ~30 s`}
             </Text>
-            <Button title="Speak" icon="play" onPress={speak} busy={busy} disabled={!text.trim() || !selected} style={{ paddingHorizontal: 22 }} />
+            <Button title="Speak" icon="play" onPress={speak} busy={busy} disabled={!text.trim() || (!selected && !serverSelected)} style={{ paddingHorizontal: 22 }} />
           </View>
           {error && <Notice text={error} kind="error" />}
         </Card>
