@@ -651,7 +651,7 @@ async def create_voice_prompt_for_profile(
             sample.reference_text,
             use_cache=use_cache,
         )
-        return voice_prompt
+        return _with_studio_voice(voice_prompt, profile_id, engine)
 
     audio_paths = []
     for sample in samples:
@@ -684,7 +684,17 @@ async def create_voice_prompt_for_profile(
         combined_text,
         use_cache=use_cache,
     )
-    return voice_prompt
+    return _with_studio_voice(voice_prompt, profile_id, engine)
+
+
+def _with_studio_voice(voice_prompt: dict, profile_id: str, engine: str) -> dict:
+    """Point IndicF5 at the profile's Studio voice weights, if one is linked."""
+    if engine != "indicf5":
+        return voice_prompt
+    from .studio_voices import checkpoint_for
+
+    ckpt = checkpoint_for(profile_id)
+    return {**voice_prompt, "checkpoint": str(ckpt)} if ckpt else voice_prompt
 
 
 async def upload_avatar(

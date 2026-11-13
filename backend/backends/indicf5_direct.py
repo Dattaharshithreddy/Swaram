@@ -33,9 +33,10 @@ DIT_KWARGS = {"dim": 1024, "heads": 16, "dim_head": 64, "ff_mult": 2, "text_dim"
 class IndicF5Direct:
     """Holds the loaded model pieces; the fast path drives them directly."""
 
-    def __init__(self, ema_model, vocoder):
+    def __init__(self, ema_model, vocoder, vocab: list[str] | None = None):
         self.ema_model = ema_model
         self.vocoder = vocoder
+        self.vocab = vocab or []
 
     def to(self, device):
         self.ema_model = self.ema_model.to(device)
@@ -154,4 +155,11 @@ def load_indicf5() -> IndicF5Direct:
     cfm = build_cfm(transformer_state(_load_state(ckpt)), vocab)
     vocoder = build_vocos(hf_hub_download(VOCOS_REPO, "pytorch_model.bin"))
     logger.info("IndicF5 loaded directly from %s (%d tokens)", ckpt.name, len(vocab))
-    return IndicF5Direct(cfm, vocoder)
+    return IndicF5Direct(cfm, vocoder, vocab)
+
+
+def load_studio_cfm(checkpoint: str | Path, vocab: list[str]):
+    """A Studio voice: IndicF5's transformer fine-tuned on one person (cloud/finetune.py)."""
+    state = transformer_state(_load_state(Path(checkpoint)))
+    state = {k: v.float() for k, v in state.items()}  # saved in half precision
+    return build_cfm(state, vocab)
