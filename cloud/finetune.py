@@ -155,7 +155,26 @@ def main() -> None:
     def snapshot():
         return ({k: v.detach().cpu().clone() for k, v in dit.state_dict().items()}, {k: v.cpu().clone() for k, v in ema.items()})
 
-    good = snapshot()  # last weights known to be healthy, to roll back to
+    state = {"good": snapshot()}  # last weights known to be healthy, to roll back to
+    bad_run = 0
+
+    def check_health():
+        nonlocal ema, opt, lr, rollbacks, deadline
+        if all_finite(params) and all_finite(ema.values()):
+            state["good"] = snapshot()
+            return
+        # The model blew up: go back to the last healthy weights, learn more slowly.
+        rollbacks += 1
+        live, ema_good = state["good"]
+        dit.load_state_dict(live, strict=False)
+        ema = {k: v.to(device) for k, v in ema_good.items()}
+        lr /= 2
+        opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
+        print(f"step {step}: weights went NaN; rolled back, learning rate now {lr:.1e}", flush=True)
+        if rollbacks > 4:
+            print("Training keeps blowing up; stopping with the last healthy weights.", flush=True)
+            deadline = 0
+
     cfm.train()
     while True:
         for batch in batches(clips, max_frames, rng):
@@ -171,17 +190,27 @@ def main() -> None:
             with torch.autocast("cuda", dtype=amp_dtype or torch.float32, enabled=amp_dtype is not None):
                 loss, _, _ = cfm(x, texts, lens=lens)
             opt.zero_grad(set_to_none=True)
-            if not math.isfinite(loss.item()):
-                skipped += 1  # a bad batch: skip it rather than learn from it
-                continue
-            scaler.scale(loss).backward()
-            scaler.unscale_(opt)
-            norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
-            if not math.isfinite(float(norm)):
+            bad = not math.isfinite(loss.item())
+            if not bad:
+                scaler.scale(loss).backward()
+                scaler.unscale_(opt)
+                norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
+                bad = not math.isfinite(float(norm))
+                if bad:
+                    opt.zero_grad(set_to_none=True)
+                    scaler.update()
+            if bad:
+                # A bad batch: skip it rather than learn from it. Many in a row
+                # means the weights themselves broke.
                 skipped += 1
-                opt.zero_grad(set_to_none=True)
-                scaler.update()
+                bad_run += 1
+                if bad_run >= 10:
+                    check_health()
+                    bad_run = 0
+                if time.time() > deadline:
+                    break
                 continue
+            bad_run = 0
             scaler.step(opt)
             scaler.update()
             step += 1
@@ -193,24 +222,11 @@ def main() -> None:
                         ema[k].mul_(decay).add_(v.float(), alpha=1 - decay)
             losses.append(loss.item())
             if step % 50 == 0:
-                if all_finite(params) and all_finite(ema.values()):
-                    good = snapshot()
-                else:
-                    # The model blew up: go back to the last healthy weights, learn more slowly.
-                    rollbacks += 1
-                    live, ema_good = good
-                    dit.load_state_dict(live, strict=False)
-                    ema = {k: v.to(device) for k, v in ema_good.items()}
-                    opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
-                    lr /= 2
-                    print(f"step {step}: weights went NaN; rolled back, learning rate now {lr:.1e}", flush=True)
-                    if rollbacks > 4:
-                        print("Training keeps blowing up; stopping with the last healthy weights.", flush=True)
-                        deadline = 0
+                check_health()
                 rate = (time.time() - t0) / step
                 print(f"step {step} loss {np.mean(losses[-50:]):.4f} {rate:.2f} s/step skipped {skipped}", flush=True)
             done = time.time() > deadline or (args.max_steps and step >= args.max_steps)
-            if done or time.time() - last_save > 1800:
+            if not done and time.time() - last_save > 1800:  # a copy in case the run is cut off
                 live = {k: v.clone() for k, v in dit.state_dict().items()}
                 if all_finite(ema.values()):
                     dit.load_state_dict({k: ema[k].to(live[k].dtype) for k in live}, strict=False)
@@ -224,8 +240,13 @@ def main() -> None:
             continue
         break
 
-    if not target.exists():
-        raise SystemExit("Training failed: no healthy weights to save.")
+    # Save the averaged weights, or the last healthy ones if they broke at the end.
+    if not all_finite(ema.values()):
+        ema = {k: v.to(device) for k, v in state["good"][1].items()}
+    live = dit.state_dict()
+    dit.load_state_dict({k: ema[k].to(live[k].dtype) for k in live}, strict=False)
+    save_weights(dit, target)
+    print(f"saved {target.name} at step {step}", flush=True)
     # A sample with the trained model, reading a new line in the first recording's voice.
     dit.load_state_dict({k: ema[k].to(v.dtype) for k, v in dit.state_dict().items()}, strict=False)
     cfm.eval()
