@@ -76,10 +76,17 @@ def batches(clips, max_frames: int, rng: random.Random):
     return out
 
 
+def all_finite(tensors) -> bool:
+    return all(bool(torch.isfinite(v).all()) for v in tensors if v.is_floating_point())
+
+
 def save_weights(model: torch.nn.Module, path: Path) -> None:
     from safetensors.torch import save_file
 
     state = {f"transformer.{k}": v.detach().half().contiguous().cpu() for k, v in model.state_dict().items() if not k.endswith("freqs_cis")}
+    # Never write a broken model (an earlier run saved NaN weights after 2.5 hours).
+    if not all_finite(state.values()):
+        raise RuntimeError("The trained weights are not finite (or overflow half precision); not saving them.")
     tmp = path.with_suffix(".tmp")
     save_file(state, str(tmp))
     tmp.replace(path)
@@ -92,9 +99,11 @@ def main() -> None:
     p.add_argument("--id", required=True, help="voice id, used in the output file name")
     p.add_argument("--hours", type=float, default=2.5)
     p.add_argument("--lr", type=float, default=1e-5)
-    p.add_argument("--max-frames", type=int, default=3200, help="audio frames per batch (T4 16 GB: about 3200)")
+    p.add_argument("--max-frames", type=int, default=0, help="audio frames per batch (0: 3200 in half precision, 2000 in fp32, for a 16 GB GPU)")
     p.add_argument("--max-steps", type=int, default=0, help="Tests: stop after this many steps")
     p.add_argument("--random", type=int, default=0, help="Tests: random model with this many layers")
+    p.add_argument("--precision", choices=["auto", "fp32", "bf16", "fp16"], default="auto",
+                   help="auto: bf16 on GPUs that have it (L4, A100), else fp32. fp16 diverged on a T4.")
     args = p.parse_args()
 
     out = Path(args.out)
@@ -125,16 +134,31 @@ def main() -> None:
     assert clips, "No usable recordings (each must be 1-20 seconds with its words)."
 
     ema = {k: v.detach().clone().float() for k, v in dit.state_dict().items()}
-    opt = torch.optim.AdamW([q for q in cfm.parameters() if q.requires_grad], lr=args.lr, weight_decay=0.01)
-    use_amp = device == "cuda"
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
-    warmup = 200
+    params = [q for q in cfm.parameters() if q.requires_grad]
+    opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=0.01)
+    precision = args.precision
+    if precision == "auto":
+        precision = "bf16" if device == "cuda" and torch.cuda.is_bf16_supported() and torch.cuda.get_device_capability()[0] >= 8 else "fp32"
+    if device != "cuda":
+        precision = "fp32"
+    amp_dtype = {"bf16": torch.bfloat16, "fp16": torch.float16}.get(precision)
+    scaler = torch.amp.GradScaler("cuda", enabled=precision == "fp16")
+    max_frames = args.max_frames or (2000 if precision == "fp32" else 3200)
+    print(f"precision {precision}, {max_frames} frames per batch", flush=True)
+    lr = args.lr
+    warmup = 500
     deadline = time.time() + args.hours * 3600
     step, last_save, t0, losses = 0, time.time(), time.time(), []
+    skipped, rollbacks = 0, 0
     target = out / f"voice-model-{args.id}.safetensors"
+
+    def snapshot():
+        return ({k: v.detach().cpu().clone() for k, v in dit.state_dict().items()}, {k: v.cpu().clone() for k, v in ema.items()})
+
+    good = snapshot()  # last weights known to be healthy, to roll back to
     cfm.train()
     while True:
-        for batch in batches(clips, args.max_frames, rng):
+        for batch in batches(clips, max_frames, rng):
             mels = [clips[i][0] for i in batch]
             lens = torch.tensor([m.shape[0] for m in mels], device=device)
             x = torch.zeros(len(mels), int(lens.max()), mels[0].shape[1])
@@ -143,13 +167,21 @@ def main() -> None:
             x = x.to(device)
             texts = [clips[i][1] for i in batch]
             for g in opt.param_groups:
-                g["lr"] = args.lr * min(1.0, (step + 1) / warmup)
-            with torch.autocast("cuda", dtype=torch.float16, enabled=use_amp):
+                g["lr"] = lr * min(1.0, (step + 1) / warmup)
+            with torch.autocast("cuda", dtype=amp_dtype or torch.float32, enabled=amp_dtype is not None):
                 loss, _, _ = cfm(x, texts, lens=lens)
             opt.zero_grad(set_to_none=True)
+            if not math.isfinite(loss.item()):
+                skipped += 1  # a bad batch: skip it rather than learn from it
+                continue
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
-            torch.nn.utils.clip_grad_norm_(cfm.parameters(), 1.0)
+            norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
+            if not math.isfinite(float(norm)):
+                skipped += 1
+                opt.zero_grad(set_to_none=True)
+                scaler.update()
+                continue
             scaler.step(opt)
             scaler.update()
             step += 1
@@ -159,25 +191,41 @@ def main() -> None:
                 for k, v in dit.state_dict().items():
                     if v.dtype.is_floating_point:
                         ema[k].mul_(decay).add_(v.float(), alpha=1 - decay)
-            if math.isfinite(loss.item()):
-                losses.append(loss.item())
+            losses.append(loss.item())
             if step % 50 == 0:
+                if all_finite(params) and all_finite(ema.values()):
+                    good = snapshot()
+                else:
+                    # The model blew up: go back to the last healthy weights, learn more slowly.
+                    rollbacks += 1
+                    live, ema_good = good
+                    dit.load_state_dict(live, strict=False)
+                    ema = {k: v.to(device) for k, v in ema_good.items()}
+                    opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.01)
+                    lr /= 2
+                    print(f"step {step}: weights went NaN; rolled back, learning rate now {lr:.1e}", flush=True)
+                    if rollbacks > 4:
+                        print("Training keeps blowing up; stopping with the last healthy weights.", flush=True)
+                        deadline = 0
                 rate = (time.time() - t0) / step
-                print(f"step {step} loss {np.mean(losses[-50:]):.4f} {rate:.2f} s/step", flush=True)
+                print(f"step {step} loss {np.mean(losses[-50:]):.4f} {rate:.2f} s/step skipped {skipped}", flush=True)
             done = time.time() > deadline or (args.max_steps and step >= args.max_steps)
             if done or time.time() - last_save > 1800:
                 live = {k: v.clone() for k, v in dit.state_dict().items()}
-                dit.load_state_dict({k: ema[k].to(live[k].dtype) for k in live}, strict=False)
-                save_weights(dit, target)
+                if all_finite(ema.values()):
+                    dit.load_state_dict({k: ema[k].to(live[k].dtype) for k in live}, strict=False)
+                    save_weights(dit, target)
+                    print(f"saved {target.name} at step {step}", flush=True)
                 dit.load_state_dict(live, strict=False)
                 last_save = time.time()
-                print(f"saved {target.name} at step {step}", flush=True)
             if done:
                 break
         else:
             continue
         break
 
+    if not target.exists():
+        raise SystemExit("Training failed: no healthy weights to save.")
     # A sample with the trained model, reading a new line in the first recording's voice.
     dit.load_state_dict({k: ema[k].to(v.dtype) for k, v in dit.state_dict().items()}, strict=False)
     cfm.eval()
@@ -191,8 +239,13 @@ def main() -> None:
         mel, _ = cfm.sample(cond=ref_mel[None].to(device), text=[ref_text + text], duration=torch.tensor([dur], device=device),
                             lens=torch.tensor([frames], device=device), steps=32, cfg_strength=2.0, sway_sampling_coef=-1.0)
         wav = vocos.decode(mel[:, frames:dur].float().permute(0, 2, 1))[0].float().cpu().numpy()
-    sf.write(out / "sample.wav", np.clip(wav, -1, 1), SR)
-    print(f"Done: {step} steps, {(time.time() - t0) / 3600:.2f} h, final loss {np.mean(losses[-100:]):.4f}")
+    sf.write(out / "sample.wav", np.clip(np.nan_to_num(wav), -1, 1), SR)
+    print(f"Done: {step} steps, {(time.time() - t0) / 3600:.2f} h, final loss {np.mean(losses[-100:]):.4f}, "
+          f"skipped {skipped} bad batches, {rollbacks} rollbacks")
+    # Speech sits well below full scale; silence or full-scale noise means a broken model.
+    rms = float(np.sqrt(np.mean(np.nan_to_num(wav) ** 2))) if wav.size else 0.0
+    if not args.random and not (np.isfinite(wav).all() and 0.005 < rms < 0.5):
+        raise SystemExit(f"The trained voice sounds broken (sample loudness {rms:.3f}); not using it.")
 
 
 if __name__ == "__main__":

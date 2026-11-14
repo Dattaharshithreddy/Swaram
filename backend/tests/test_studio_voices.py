@@ -140,3 +140,21 @@ def test_legacy_kaggle_key_uses_basic_auth():
     assert _kaggle_headers("KGAT_abc", None)["Authorization"] == "Bearer KGAT_abc"
     with pytest.raises(ValueError, match="username"):
         _kaggle_headers("b" * 32, None)
+
+
+def test_broken_training_output_is_refused(server, tmp_path):
+    """A run that diverged saves NaN weights; linking or loading one must fail clearly."""
+    from safetensors.torch import load_file, save_file
+
+    from backend.services import studio_voices
+
+    p = _profile_with_clip(server, tmp_path)
+    good = _studio_checkpoint(tmp_path / "voice-model-good.safetensors", seed=3)
+    state = {k: torch.full_like(v, float("nan")) for k, v in load_file(str(good)).items()}
+    bad = tmp_path / "voice-model-nan.safetensors"
+    save_file(state, str(bad))
+    with pytest.raises(ValueError, match="broken"):
+        studio_voices.link(p.id, bad)
+    assert studio_voices.checkpoint_for(p.id) is None
+    with pytest.raises(ValueError, match="Train the Studio voice again"):
+        direct.load_studio_cfm(bad, VOCAB)
