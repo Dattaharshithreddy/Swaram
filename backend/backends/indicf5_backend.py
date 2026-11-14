@@ -79,6 +79,7 @@ class IndicF5Backend:
 
         self.fast_path = os.environ.get("SWARAM_F5_STOCK", "").strip() not in ("1", "true", "yes")
         self._ref_cache: dict = {}
+        self._studio: tuple = (None, None)  # (checkpoint path, CFM with its weights)
 
     def _get_device(self) -> str:
         return get_torch_device(allow_mps=True, allow_xpu=False)
@@ -172,6 +173,7 @@ class IndicF5Backend:
             self.model = None
             self._device = None
             self._ref_cache.clear()
+            self._studio = (None, None)
             gc.collect()
             empty_device_cache(device)
             logger.info("IndicF5 unloaded")
@@ -283,6 +285,8 @@ class IndicF5Backend:
                 from . import f5_fast
 
                 ref = self._prepared_reference(voice_prompt)
+                if voice_prompt.get("checkpoint"):
+                    cfm = self._studio_cfm(voice_prompt["checkpoint"], cfm)
                 audio = f5_fast.synthesize(
                     cfm,
                     vocoder,
@@ -310,6 +314,21 @@ class IndicF5Backend:
             return audio.astype(np.float32), SAMPLE_RATE
 
         return await asyncio.to_thread(_generate_sync)
+
+    def _studio_cfm(self, checkpoint: str, base_cfm):
+        """IndicF5 with a Studio voice's weights; one kept loaded at a time."""
+        if self._studio[0] == checkpoint:
+            return self._studio[1]
+        vocab = getattr(self.model, "vocab", None)
+        if not vocab:
+            raise RuntimeError("Studio voices need IndicF5 loaded directly; restart the server and try again.")
+        from .indicf5_direct import load_studio_cfm
+
+        self._studio = (None, None)  # free the previous one first
+        logger.info("Loading Studio voice %s", checkpoint)
+        cfm = load_studio_cfm(checkpoint, vocab).to(self._model_device(base_cfm)).eval()
+        self._studio = (checkpoint, cfm)
+        return cfm
 
     def _model_device(self, module) -> str:
         try:
