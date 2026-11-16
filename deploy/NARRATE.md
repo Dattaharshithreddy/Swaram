@@ -55,7 +55,29 @@ normal tone. Keep lines short: one thought each.
 5. **Read the reply.** It gives `duration` and, for every line, `start` and
    `end` in seconds. Use these to time captions.
 6. **Download the WAV** with a presigned download URL for the same key.
-7. **Stop the instance.** Always, including when a step failed.
+7. **Stop the instance, unless someone else is using it.** See the next section.
+   If you started it and nobody else is on it, stop it, including when a step failed.
+
+## Sharing the server with other sessions
+
+More than one session may use the same server (one narrating, another rendering
+a video). Stopping it under another session breaks that session's work.
+
+- **Before starting:** note whether the instance was already `running`. If it
+  was, someone else started it: you do not own the shutdown.
+- **Before stopping:** check for other activity, and leave the server running if
+  you find any.
+  - SSM command history for the instance (`ListCommands`): any command from the
+    last 15 minutes that you did not send, or any command still `InProgress`.
+  - On the server: `nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader`
+    above 10%, or busy jobs in `ps -eo etimes,pcpu,args --sort=-pcpu | head`.
+- **If you leave it running,** tell the user plainly that the server is still on,
+  who seems to be using it, and that it costs money until someone stops it.
+- **If it was already running when you arrived** and nothing else is active when
+  you finish, ask the user before stopping it.
+- Do not restart the app (`docker compose up`, `restart`) while another session
+  is active, and avoid heavy GPU work at the same time: narration slows down and
+  the other job may run out of memory.
 
 The API key stays on the server: `deploy/narrate.sh` reads it from `.env`.
 Never print it or copy it into the conversation.
@@ -70,3 +92,4 @@ Never print it or copy it into the conversation.
 | `moods_missing` in the reply | Those lines were read in the normal tone; the voice has no clip for that mood. |
 | Upload returns 400 or 403 | The presigned URL expired. Get a new one and upload `output/narrations/<file>` again. |
 | `VcpuLimitExceeded` on start | The instance is still stopping. Wait for `stopped`, then start. |
+| A command fails with the server suddenly gone | Another session may have stopped it. Start it again and repeat the step. |
