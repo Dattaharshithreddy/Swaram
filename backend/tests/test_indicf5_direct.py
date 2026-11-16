@@ -42,8 +42,12 @@ def fake_hub(tmp_path, monkeypatch):
 
     import huggingface_hub
 
-    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: str(snap))
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda *a, **k: str(vocos_bin))
+    files = {
+        "model.safetensors": snap / "model.safetensors",
+        "checkpoints/vocab.txt": snap / "vocab.txt",
+        "pytorch_model.bin": vocos_bin,
+    }
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda repo, filename, **k: str(files[filename]))
     return tmp_path
 
 

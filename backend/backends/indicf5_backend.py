@@ -248,6 +248,7 @@ class IndicF5Backend:
         language: str = "te",
         seed: int | None = None,
         instruct: str | None = None,
+        speed: float = 1.0,
     ) -> tuple[np.ndarray, int]:
         """
         Generate speech with IndicF5.
@@ -259,6 +260,7 @@ class IndicF5Backend:
                 language from the script of ``text``.
             seed: Random seed for reproducibility.
             instruct: Not supported (ignored).
+            speed: Speaking pace on the fast path (1.0 is the voice's own pace).
 
         Returns:
             Tuple of (float32 audio array, 24000).
@@ -294,6 +296,7 @@ class IndicF5Backend:
                     text,
                     device=self._model_device(cfm),
                     steps=f5_fast.quality_steps(),
+                    speed=speed,
                     seed=seed,
                 )
                 return audio, SAMPLE_RATE

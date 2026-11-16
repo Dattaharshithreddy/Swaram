@@ -59,6 +59,7 @@ def link(profile_id: str, checkpoint: Path) -> Path:
     checkpoint = Path(checkpoint)
     if not checkpoint.is_file() or checkpoint.suffix != ".safetensors":
         raise ValueError(f"Not a .safetensors file: {checkpoint}")
+    _check_weights(checkpoint)
     target = _dir() / checkpoint.name
     if checkpoint.resolve() != target.resolve():
         import shutil
@@ -69,6 +70,15 @@ def link(profile_id: str, checkpoint: Path) -> Path:
         data[profile_id] = target.name
         _index_path().write_text(json.dumps(data, indent=1), "utf-8")
     return target
+
+
+def _check_weights(checkpoint: Path) -> None:
+    """Refuse a voice whose training blew up (NaN weights speak only silence)."""
+    from safetensors.torch import load_file
+
+    from ..backends.indicf5_direct import check_finite
+
+    check_finite(load_file(str(checkpoint)), checkpoint.name)
 
 
 def unlink(profile_id: str) -> None:

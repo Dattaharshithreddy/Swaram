@@ -236,6 +236,14 @@ class CompareBody(BaseModel):
     engines: list[str] | None = None
 
 
+class NarrateBody(BaseModel):
+    profile: str
+    script: str = Field(..., min_length=1, max_length=20000)
+    language: str | None = None
+    seed: int | None = None
+    target_seconds: float | None = Field(None, gt=0, le=1800)
+
+
 def _design_dir(kind: str):
     from pathlib import Path
 
@@ -291,12 +299,12 @@ async def design_save(body: DesignBody, db: Session = Depends(get_db)):
 
 @router.get("/indic/design/audio/{kind}/{name}")
 async def design_audio(kind: str, name: str):
-    """Serve a preview or comparison WAV."""
+    """Serve a preview, comparison or narration WAV."""
     import re
 
     from fastapi.responses import FileResponse
 
-    if kind not in ("previews", "compare") or not re.fullmatch(r"[A-Za-z0-9_\-]+\.wav", name):
+    if kind not in ("previews", "compare", "narrations") or not re.fullmatch(r"[A-Za-z0-9_\-]+\.wav", name):
         raise HTTPException(status_code=404, detail="Not found")
     path = _design_dir(kind) / name
     if not path.is_file():
@@ -325,3 +333,24 @@ async def compare(body: CompareBody, db: Session = Depends(get_db)):
         if r.get("audio_path"):
             r["audio_url"] = f"/indic/design/audio/compare/{Path(r.pop('audio_path')).name}"
     return {"profile": profile.name, "language": language, "results": results}
+
+
+@router.post("/indic/narrate")
+async def narrate(body: NarrateBody, db: Session = Depends(get_db)):
+    """Speak a script with (mood) and [pause] marks as one recording, with line timings."""
+    from pathlib import Path
+
+    from ..services import narration
+    from ..services.profiles import get_profile_orm_by_name_or_id
+
+    profile = get_profile_orm_by_name_or_id(body.profile, db)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"Voice not found: {body.profile}")
+    try:
+        res = await narration.narrate(
+            db, profile, body.script, language=body.language, seed=body.seed, target_seconds=body.target_seconds
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    res["audio_url"] = f"/indic/design/audio/narrations/{Path(res.pop('audio_path')).name}"
+    return res

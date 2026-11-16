@@ -10,7 +10,8 @@ Typical flow when a user asks Claude for "a calm Telugu storyteller voice":
   4. ``swaram_speak``                read any text in it; waits and returns the
                                      WAV path and URL
 
-Plus ``swaram_clone_voice`` (from a recording), ``swaram_compare_engines``
+``swaram_narrate`` reads a whole script with (mood) and [pause] marks into one
+recording. Plus ``swaram_clone_voice`` (from a recording), ``swaram_compare_engines``
 (hear IndicF5 vs DhVaani on one voice, with timings), ``swaram_set_quality``
 and ``swaram_list_voices``.
 
@@ -43,7 +44,7 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 def _preview_url(path: str) -> str | None:
     p = Path(path)
-    if p.parent.name in ("previews", "compare"):
+    if p.parent.name in ("previews", "compare", "narrations"):
         return f"/indic/design/audio/{p.parent.name}/{p.name}"
     return None
 
@@ -257,6 +258,39 @@ def register_swaram_tools(mcp: FastMCP) -> None:
         if not wait:
             return {"generation_id": gen_id, "status": "queued", "poll_tool": "swaram_get_audio"}
         return await _wait_for(gen_id, timeout_seconds)
+
+    @mcp.tool(
+        name="swaram_narrate",
+        description=(
+            "Narrate a whole script in a saved voice as one finished WAV, with moods and exact pauses. "
+            "One line of the script per sentence. Start a line with (story), (talk), (happy), (sad), (fear), "
+            "(surprise), (anger) or (disgust) to set its mood; add slow, fast or speed 0.9 inside the brackets "
+            "for pace, e.g. (fear, slow). Write [pause 0.8] for the silence after a line; a blank line is a "
+            "longer pause. target_seconds fits the recording to a length by adjusting pauses only. "
+            "Returns the WAV plus each line's start and end time, for captions. Moods need a voice with mood "
+            "clips (see moods_available in the result); other voices are read in their normal tone."
+        ),
+    )
+    async def swaram_narrate(
+        script: str,
+        voice: str | None = None,
+        language: Language | None = None,
+        target_seconds: float | None = None,
+        seed: int | None = None,
+    ) -> dict[str, Any]:
+        from ..services import narration
+        from .context import current_client_id
+
+        db = next(get_db())
+        try:
+            vp = resolve_profile(voice, current_client_id.get(), db)
+            if vp is None:
+                raise ValueError("Voice not found. Use swaram_list_voices to see the saved voices.")
+            res = await narration.narrate(db, vp, script, language=language, seed=seed, target_seconds=target_seconds)
+        finally:
+            db.close()
+        res["audio_url"] = _preview_url(res["audio_path"])
+        return res
 
     @mcp.tool(
         name="swaram_get_audio",

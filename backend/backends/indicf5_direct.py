@@ -58,14 +58,6 @@ def _install_trainer_stub() -> None:
         sys.modules[name] = stub
 
 
-def _find(root: Path, patterns: tuple[str, ...]) -> Path:
-    for pattern in patterns:
-        hits = sorted(root.rglob(pattern))
-        if hits:
-            return hits[0]
-    raise FileNotFoundError(f"None of {patterns} found under {root}")
-
-
 def read_vocab(path: str | Path) -> list[str]:
     """One token per line, as F5-TTS writes vocab.txt (line order = id)."""
     with open(path, encoding="utf-8") as f:
@@ -143,17 +135,44 @@ def build_vocos(weights: str | Path):
     return model.eval()
 
 
+def _hub_file(repo: str, filename: str) -> str:
+    """One file from the Hub, downloading it if this cache lacks it.
+
+    The server switches the Hub to offline mode once a model counts as cached,
+    but its download step fetched only the main weights: IndicF5's vocab and
+    the Vocos weights were missing on a fresh server. So retry those online.
+    """
+    from huggingface_hub import hf_hub_download
+
+    try:
+        return hf_hub_download(repo, filename)
+    except Exception as first:  # noqa: BLE001 - offline mode or not cached
+        import os
+
+        import huggingface_hub.constants as hf_const
+
+        prev_env, prev_const = os.environ.get("HF_HUB_OFFLINE"), hf_const.HF_HUB_OFFLINE
+        os.environ["HF_HUB_OFFLINE"] = "0"
+        hf_const.HF_HUB_OFFLINE = False
+        try:
+            logger.info("Downloading %s from %s", filename, repo)
+            return hf_hub_download(repo, filename)
+        except Exception:
+            raise first from None
+        finally:
+            hf_const.HF_HUB_OFFLINE = prev_const
+            if prev_env is None:
+                os.environ.pop("HF_HUB_OFFLINE", None)
+            else:
+                os.environ["HF_HUB_OFFLINE"] = prev_env
+
+
 def load_indicf5() -> IndicF5Direct:
     """Download (or reuse) IndicF5 + Vocos and build them on the CPU."""
-    from huggingface_hub import hf_hub_download, snapshot_download
-
-    snapshot = Path(
-        snapshot_download(INDICF5_REPO, allow_patterns=["*.safetensors", "*.pt", "*.txt", "*.json", "*.py"])
-    )
-    ckpt = _find(snapshot, ("model.safetensors", "*.safetensors", "*.pt"))
-    vocab = read_vocab(_find(snapshot, ("vocab.txt", "*vocab*.txt")))
+    ckpt = Path(_hub_file(INDICF5_REPO, "model.safetensors"))
+    vocab = read_vocab(_hub_file(INDICF5_REPO, "checkpoints/vocab.txt"))
     cfm = build_cfm(transformer_state(_load_state(ckpt)), vocab)
-    vocoder = build_vocos(hf_hub_download(VOCOS_REPO, "pytorch_model.bin"))
+    vocoder = build_vocos(_hub_file(VOCOS_REPO, "pytorch_model.bin"))
     logger.info("IndicF5 loaded directly from %s (%d tokens)", ckpt.name, len(vocab))
     return IndicF5Direct(cfm, vocoder, vocab)
 
@@ -162,4 +181,15 @@ def load_studio_cfm(checkpoint: str | Path, vocab: list[str]):
     """A Studio voice: IndicF5's transformer fine-tuned on one person (cloud/finetune.py)."""
     state = transformer_state(_load_state(Path(checkpoint)))
     state = {k: v.float() for k, v in state.items()}  # saved in half precision
+    check_finite(state, Path(checkpoint).name)
     return build_cfm(state, vocab)
+
+
+def check_finite(state: dict, name: str) -> None:
+    """A training run that blew up saves NaN weights, which speak only silence."""
+    bad = [k for k, v in state.items() if v.is_floating_point() and not bool(v.isfinite().all())]
+    if bad:
+        raise ValueError(
+            f"{name} is broken: {len(bad)} of {len(state)} weight blocks are NaN/Inf "
+            "(its training failed). Train the Studio voice again."
+        )
