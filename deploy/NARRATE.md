@@ -64,7 +64,7 @@ Never print it or copy it into the conversation.
 
 | What you see | What to do |
 |---|---|
-| `deploy/narrate.sh: No such file` | The server has older code. `sudo -u ubuntu git pull --ff-only origin main`, then `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build`. |
+| `deploy/narrate.sh: No such file` | The checkout on the server is older. Run `sudo -u ubuntu git pull --ff-only origin main` in `/home/ubuntu/Swaram`. If the reply is then `404 Not Found`, the running app is older too: rebuild with `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build`. |
 | `Voice not found` | Use the voice's exact name (`/profiles` lists them). |
 | `Unknown mood (...)` | Use one of the moods in the table. |
 | `moods_missing` in the reply | Those lines were read in the normal tone; the voice has no clip for that mood. |
