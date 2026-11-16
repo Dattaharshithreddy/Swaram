@@ -86,3 +86,8 @@ The app needs **https**; Android blocks plain http to remote servers.
   re-run the script).
 - Voice samples are biometric data. Clone only voices you have written consent
   for, and delete profiles you no longer need.
+
+## Voiceovers from Claude
+
+[NARRATE.md](NARRATE.md) is the routine for narrating a script in a saved voice on a server
+that is kept stopped between uses; `deploy/narrate.sh` does the work on the server.
