@@ -11,6 +11,10 @@ on:
         description: 'Comma-separated sentence numbers to re-render (empty = all)'
         required: false
         default: ''
+      fix:
+        description: '1 = redo the fix lines using the owner narration as reference'
+        required: false
+        default: '0'
       steps:
         description: 'Sampling steps'
         required: false
@@ -36,6 +40,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           ONLY: ${{ inputs.only }}
           STEPS: ${{ inputs.steps }}
+          FIX: ${{ inputs.fix }}
         run: |
           set +e
           node --experimental-strip-types scripts/porus-narrate.ts > out.txt 2>&1; code=$?
