@@ -13,7 +13,7 @@ const hf = process.env.HF_TOKEN ?? '';
 const cfg = JSON.parse(readFileSync('../render/tirumala.json', 'utf8'));
 const env: Record<string, string> = { TAG: cfg.tag, SPP: String(cfg.spp ?? 64) };
 if (cfg.start) { env.START = String(cfg.start); env.END = String(cfg.end); } else env.FRAMES = String(cfg.frames ?? 'auto');
-const slug = cfg.slug ?? 'tirumala-reel-render';
+const slug = cfg.slug ?? 'tirumala-reel-r2';
 if (cfg.gputest) {
   const t = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: 'import subprocess,time\nprint(subprocess.run("nvidia-smi -L",shell=True,capture_output=True,text=True).stdout)\ntime.sleep(240)\nprint("GPU_TEST_OK")' }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 };
   console.log('push', JSON.stringify(await pushNotebook(auth, 'tirumala-gpu-test', t as never, { gpu: true, internet: true, timeoutSeconds: 1800 })));
@@ -50,7 +50,7 @@ def pusher():
         try: api.sync_bucket("/out/" + tag, B + "/" + tag, quiet=True); print("synced", len(os.listdir("/out/" + tag)), flush=True)
         except Exception as e: print("sync out", e, flush=True)
 threading.Thread(target=pusher, daemon=True).start()
-subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && bash /w/sv/reels/tirumala-stay/hf/render_job.sh 2>&1 | grep --line-buffered -E \"Saved|rror|frames |RENDER_JOB|Traceback\" | awk '{ print strftime(\"%H:%M:%S\"), $0; fflush() }'", shell=True)
+subprocess.run("""git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && bash /w/sv/reels/tirumala-stay/hf/render_job.sh 2>&1 | grep --line-buffered -E 'Saved|rror|frames |RENDER_JOB|Traceback' | awk '{ print strftime("%H:%M:%S"), $0; fflush() }'""", shell=True)
 done = True
 api.sync_bucket("/out/" + tag, B + "/" + tag, quiet=True)
 import shutil
