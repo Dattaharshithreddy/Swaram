@@ -48,6 +48,9 @@ jobs:
               os.makedirs('/out/' + s, exist_ok=True); api.sync_bucket(f'{B}/{s}', '/out/' + s, include=['*.glb', '*.wav'], quiet=True)
           print({s: len(os.listdir('/out/' + s)) for s in ('mf', 'audio')})
           PY
+          if [ "$(python3 -c "import json;print(int(bool(json.load(open('render/gha.json')).get('test'))))")" = 0 ]; then
+            python3 -c "import os;from huggingface_hub import HfApi;os.makedirs('/out/seq2',exist_ok=True);HfApi(token=os.environ['HF_TOKEN']).sync_bucket('hf://buckets/HarshithReddy05/tirumala-reel/seq2','/out/seq2',quiet=True);print('resume', len(os.listdir('/out/seq2')))" || true
+          fi
           git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /tmp/sv
           J=/tmp/sv/reels/tirumala-stay/hf/render_job.sh
           sed -i '/^apt-get/ s/apt-get /sudo apt-get /g' $J

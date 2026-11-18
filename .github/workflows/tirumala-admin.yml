@@ -7,6 +7,10 @@ on:
     branches: [render/tirumala]
     paths: [render/admin.json]
 
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   admin:
     runs-on: ubuntu-latest
@@ -28,3 +32,8 @@ jobs:
           python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/tmp/seed','hf://buckets/HarshithReddy05/tirumala-reel/seq',quiet=True);print('seeded')" > a.txt 2>&1
           node --experimental-strip-types scripts/tirumala-admin.ts >> a.txt 2>&1
           echo "::notice title=Admin::$(grep -v -i -e warning -e reparsing -e trace a.txt | tail -10 | tr '\n' '\r' | sed 's/\r/%0A/g')"
+      - name: Cancel old runs named in render/admin.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(python3 -c "import json;print(' '.join(map(str,json.load(open('render/admin.json')).get('cancel',[]))))"); do gh run cancel $id -R ${{ github.repository }} && echo "cancelled $id"; done
