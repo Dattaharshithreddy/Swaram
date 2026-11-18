@@ -74,7 +74,9 @@ for (let i = 0; i < 260; i++) {
 }
 const out = await runOutputs(auth, slug);
 if (state !== 'complete') {
-  console.log((out.log ?? '').slice(-3000));
+  const all = (out.log ?? '').split('\n').map((l) => { try { return (JSON.parse(l.replace(/^,/, '')) as { data: string }).data.trimEnd(); } catch { return ''; } }).filter(Boolean);
+  console.log('--- kaggle log (filtered) ---');
+  console.log(all.filter((l) => !/NbConvert|cells\[i\]|Escape underscores/.test(l)).slice(-80).join('\n'));
   throw new Error(`narration run ended as ${state}`);
 }
 if ((out.log ?? '').includes('Trained model not found')) console.log('WARNING: studio weights not found, used the normal model');
