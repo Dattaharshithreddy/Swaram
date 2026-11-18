@@ -32,6 +32,6 @@ jobs:
           openssl enc -aes-256-cbc -pbkdf2 -salt -in /tmp/narr.mp3 -out /tmp/narr.mp3.enc -pass file:/tmp/k.txt
           openssl pkeyutl -encrypt -pubin -inkey $GITHUB_WORKSPACE/mobile/scripts/tirumala_pub.pem -in /tmp/k.txt -out /tmp/k.enc
           rm /tmp/k.txt /tmp/narr.mp3
-          git config user.name "swaram-bot"; git config user.email "actions@users.noreply.github.com"
+          cd $GITHUB_WORKSPACE; git config user.name "swaram-bot"; git config user.email "actions@users.noreply.github.com"
           git checkout -q --orphan tirumala-audio-tmp && git rm -rf -q . && cp /tmp/narr.mp3.enc /tmp/k.enc . && git add narr.mp3.enc k.enc
           git commit -q -m "encrypted narration $(date -u +%FT%TZ)" && git push -q -f origin HEAD:tirumala-audio
