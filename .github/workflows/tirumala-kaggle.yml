@@ -1,0 +1,28 @@
+name: Tirumala reel render (Kaggle)
+
+# Renders the Tirumala guest-house reel frames on Kaggle's free GPU (up to 12 h per session, good for overnight).
+# Frames land in the HF bucket HarshithReddy05/tirumala-reel. Settings: render/tirumala.json. Runs on push to
+# this branch when that file changes, or by hand.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [render/tirumala]
+    paths: [render/tirumala.json]
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Start the render on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: node --experimental-strip-types scripts/tirumala-kaggle.ts
