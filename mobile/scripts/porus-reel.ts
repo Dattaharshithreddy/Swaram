@@ -17,7 +17,10 @@ def sh(c): print('$', c[:120], flush=True); subprocess.run(c, shell=True, check=
 os.makedirs('/tmp/w', exist_ok=True); os.chdir('/tmp/w')
 sh('git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo.git sv')
 sh('wget -q https://download.blender.org/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz -O b.tar.xz && tar xf b.tar.xz && mv blender-4.2.3-linux-x64 blender && rm b.tar.xz')
-sh('apt-get -qq update && apt-get -qq install -y libxi6 libxkbcommon0 libsm6 libxrender1 libxxf86vm1 libgl1 ffmpeg libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 > /dev/null')
+sh('apt-get -qq update > /dev/null')
+for _pk in 'libxi6 libxkbcommon0 libsm6 libxrender1 libxxf86vm1 libgl1 ffmpeg libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2'.split() + ['libasound2|libasound2t64']:
+    _ok = any(subprocess.run(f'apt-get -qq install -y {_c} > /dev/null 2>&1', shell=True).returncode == 0 for _c in _pk.split('|'))
+    print('apt', _pk, 'ok' if _ok else 'MISSING', flush=True)
 sh('curl -fsSL https://nodejs.org/dist/v20.18.0/node-v20.18.0-linux-x64.tar.xz | tar -xJ -C /opt')
 os.environ['PATH'] = '/opt/node-v20.18.0-linux-x64/bin:' + os.environ['PATH']
 sh('cd sv/reels/porus/mg && npm install --no-audit --no-fund --loglevel=error && npx remotion browser ensure > /dev/null')
