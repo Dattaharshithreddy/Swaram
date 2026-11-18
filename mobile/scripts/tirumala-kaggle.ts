@@ -14,6 +14,14 @@ const cfg = JSON.parse(readFileSync('../render/tirumala.json', 'utf8'));
 const env: Record<string, string> = { TAG: cfg.tag, SPP: String(cfg.spp ?? 64) };
 if (cfg.start) { env.START = String(cfg.start); env.END = String(cfg.end); } else env.FRAMES = String(cfg.frames ?? 'auto');
 const slug = cfg.slug ?? 'tirumala-reel-render';
+if (cfg.gputest) {
+  const t = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: 'import subprocess,time\nprint(subprocess.run("nvidia-smi -L",shell=True,capture_output=True,text=True).stdout)\ntime.sleep(240)\nprint("GPU_TEST_OK")' }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 };
+  console.log('push', JSON.stringify(await pushNotebook(auth, 'tirumala-gpu-test', t as never, { gpu: true, internet: true, timeoutSeconds: 1800 })));
+  for (let i = 0; i < 12; i++) { await new Promise((r) => setTimeout(r, 30000)); const st = await runStatus(auth, 'tirumala-gpu-test'); console.log(i, st.raw, st.message ?? ''); if (['complete', 'error', 'cancelled'].includes(st.state) || st.raw.includes('CANCEL')) break; }
+  const o = await runOutputs(auth, 'tirumala-gpu-test').catch((e) => ({ files: [], log: String(e) }));
+  try { for (const l of JSON.parse(String(o.log ?? ''))) console.log(String(l.data ?? '').trimEnd()); } catch { console.log(String(o.log ?? '').slice(-1500)); }
+  process.exit(0);
+}
 if (cfg.logonly) {
   const st = await runStatus(auth, slug); console.log('status', st.raw);
   const o = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
