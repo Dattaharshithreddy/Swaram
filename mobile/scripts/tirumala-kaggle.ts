@@ -60,7 +60,9 @@ async function pushWait(sl: string, book: unknown) {
   }
 }
 const nParts = Number(cfg.parts ?? 1);
+const only: number[] = cfg.only ?? [];
 for (let k = 1; k <= nParts; k++) {
+  if (only.length && !only.includes(k)) continue;
   const e2: Record<string, string> = nParts > 1 ? { ...env, START: `part${k}of${nParts}` } : env;
   if (nParts > 1) delete e2.FRAMES;
   const book = mkNb(e2);
