@@ -24,14 +24,14 @@ jobs:
           import os
           from huggingface_hub import HfApi
           api = HfApi(token=os.environ['HF_TOKEN']); B = 'hf://buckets/HarshithReddy05/tirumala-reel'
-          for sub, src in (('seq', 'seq2'), ('audio', 'audio'), ('kaggle_meta', 'kaggle_meta')):
+          for sub, src in (('seq', 'seq2'), ('audio', 'audio'), ('kaggle_meta', 'gha_meta')):
               os.makedirs('/out/' + sub, exist_ok=True); api.sync_bucket(f'{B}/{src}', '/out/' + sub, quiet=True)
           print({s: len(os.listdir('/out/' + s)) for s in ('seq', 'audio', 'kaggle_meta')})
           PY
           cp /out/kaggle_meta/timing.json /out/kaggle_meta/labels.json /out/
       - name: Mix and add the Telugu overlay
         run: |
-          sed -i 's/--concurrency=8/--concurrency=4/; s/^apt-get /sudo apt-get /' /tmp/sv/reels/tirumala-stay/hf/post_job.sh
+          sed -i 's/--concurrency=8/--concurrency=4/; /^apt-get/ s/apt-get /sudo apt-get /g' /tmp/sv/reels/tirumala-stay/hf/post_job.sh
           bash /tmp/sv/reels/tirumala-stay/hf/post_job.sh > post.txt 2>&1; code=$?
           echo "::notice title=Finish::$(grep -v '^+' post.txt | tail -15 | tr '\n' '\r' | sed 's/\r/%0A/g')"
           exit $code

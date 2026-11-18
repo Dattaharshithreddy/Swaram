@@ -59,4 +59,5 @@ jobs:
           (while sleep 240; do python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/out/$TAG','hf://buckets/HarshithReddy05/tirumala-reel/$TAG',quiet=True)" 2>/dev/null; done) &
           time bash $J 2>&1 | grep -E "Saved|rror|frames |RENDER_JOB|Time:|CYCLES" | tail -40 | tee r.txt
           python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/out/$TAG','hf://buckets/HarshithReddy05/tirumala-reel/$TAG',quiet=True)"
+          mkdir -p /tmp/meta && cp /out/timing.json /out/labels.json /tmp/meta/ 2>/dev/null; python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/tmp/meta','hf://buckets/HarshithReddy05/tirumala-reel/gha_meta',quiet=True)" || true
           echo "::notice title=Slice ${{ matrix.slice }}::$(tail -12 r.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"
