@@ -51,9 +51,11 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 `_c = []\n` +
 `for _n, _t in _rows:\n    _f = glob.glob(os.path.dirname(_m[0]) + '/**/' + _n, recursive=True)\n    if not _f: continue\n` +
 `    _d = _lr.get_duration(path=_f[0])\n    if 2.0 <= _d <= 12 and _t.strip()[-1:] in '.?!।': _c.append((_d, _f[0], _t.strip()))\n` +
-`assert _c, 'no usable recording'\n_c.sort(key=lambda x: -x[0])\n_pick, _tot = [], 0.0\n` +
+`assert _c, 'no usable recording'\nimport numpy as _np\n` +
+`def _expr(f):\n    w, _ = _lr.load(f, sr=16000, mono=True); w, _ = _lr.effects.trim(w, top_db=35)\n    f0 = _lr.yin(w, fmin=70, fmax=400, sr=16000); f0 = f0[(f0 > 75) & (f0 < 390)]\n    if len(f0) < 20: return 0.0\n    st = 12 * _np.log2(f0 / _np.median(f0)); rms = _lr.feature.rms(y=w)[0]\n    return float(_np.std(st) + 2.5 * _np.std(rms) / (_np.mean(rms) + 1e-6) * 0.3)\n` +
+`_c = sorted(_c, key=lambda x: -x[0])[:80]\n_c = sorted(((_expr(x[1]),) + x for x in _c), key=lambda x: -x[0])\nprint('expressiveness top', [round(x[0], 2) for x in _c[:6]])\n_c = [x[1:] for x in _c]\n_pick, _tot = [], 0.0\n` +
 `for _x in _c:\n    if _tot + _x[0] > 11.5: continue\n    _pick.append(_x); _tot += _x[0]\n    if _tot >= 7.5: break\n` +
-`import numpy as _np\n_gap = _np.zeros(int(0.35 * 24000), dtype=_np.float32)\n_parts = []\n` +
+`_gap = _np.zeros(int(0.35 * 24000), dtype=_np.float32)\n_parts = []\n` +
 `for _x in _pick:\n    _w, _ = _lr.load(_x[1], sr=24000, mono=True); _w, _ = _lr.effects.trim(_w, top_db=35); _parts += [_w, _gap]\n` +
 `_sf.write('/kaggle/working/ref.wav', _np.concatenate(_parts[:-1]), 24000)\n` +
 `print('reference from', len(_pick), 'recordings,', round(_tot, 1), 's')\n` +
