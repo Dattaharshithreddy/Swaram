@@ -46,7 +46,7 @@ jobs:
           PY
           git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /tmp/sv
           J=/tmp/sv/reels/tirumala-stay/hf/render_job.sh
-          sed -i 's/^apt-get /sudo apt-get /; s/^mkdir -p \/opt/sudo mkdir -p \/opt/; s/^tar -xf/sudo tar -xf/' $J
+          sed -i '/^apt-get/ s/apt-get /sudo apt-get /g' $J
           sudo mkdir -p /opt/reel && sudo chown -R $USER /opt/reel
           # CPU: Cycles on all cores; test mode renders 3 frames to time it
           sed -i "s/for dt in ('OPTIX', 'CUDA'):/for dt in ():/" /tmp/sv/reels/tirumala-stay/hf/cycles_hq.py
