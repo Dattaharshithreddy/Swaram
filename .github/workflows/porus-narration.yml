@@ -1,0 +1,57 @@
+name: Puru narration (Kaggle)
+
+# Renders the Puru reel narration sentence by sentence on a Kaggle GPU with the trained studio voice.
+# The audio is encrypted with the reel pipeline's public key before it leaves the runner, and pushed
+# to the porus-narration branch, so the voice is never readable in this public repo. Run by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Comma-separated sentence numbers to re-render (empty = all)'
+        required: false
+        default: ''
+      steps:
+        description: 'Sampling steps'
+        required: false
+        default: '40'
+
+permissions:
+  contents: write
+
+jobs:
+  narrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Render on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          ONLY: ${{ inputs.only }}
+          STEPS: ${{ inputs.steps }}
+        run: |
+          set +e
+          node --experimental-strip-types scripts/porus-narrate.ts > out.txt 2>&1; code=$?
+          grep -v -i warning out.txt | tail -40
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Puru narration::$(grep -v -i warning out.txt | tail -25 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
+      - name: Encrypt and publish
+        working-directory: mobile/render-out
+        run: |
+          openssl rand -hex 32 > k.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in porus-narr.zip -out porus-narr.zip.enc -pass file:k.txt
+          openssl pkeyutl -encrypt -pubin -inkey ../scripts/porus_pub.key.txt -in k.txt -out k.enc
+          rm k.txt porus-narr.zip; rm -rf narr
+          git config user.name "swaram-bot"; git config user.email "actions@users.noreply.github.com"
+          cd /tmp && rm -rf pub && mkdir pub && cp $GITHUB_WORKSPACE/mobile/render-out/porus-narr.zip.enc $GITHUB_WORKSPACE/mobile/render-out/k.enc pub/
+          cd $GITHUB_WORKSPACE && git checkout --orphan porus-narration-tmp && git rm -rf -q . && cp /tmp/pub/* . && git add porus-narr.zip.enc k.enc
+          git commit -q -m "encrypted narration $(date -u +%FT%TZ)" && git push -f origin HEAD:porus-narration
+          echo "::notice title=Published::porus-narration branch updated"
