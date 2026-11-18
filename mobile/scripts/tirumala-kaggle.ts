@@ -6,7 +6,7 @@
  * Settings come from render/tirumala.json: { tag, frames | start+end, spp }.
  */
 import { readFileSync } from 'node:fs';
-import { pushNotebook, runStatus } from '../src/edge/kaggle.ts';
+import { pushNotebook, runOutputs, runStatus } from '../src/edge/kaggle.ts';
 
 const auth = { username: process.env.KAGGLE_USERNAME ?? '', token: process.env.KAGGLE_API_TOKEN ?? '' } as never;
 const hf = process.env.HF_TOKEN ?? '';
@@ -46,4 +46,13 @@ print("KAGGLE_RENDER_DONE", len(os.listdir("/out/" + tag)))
 const nb = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: code }], metadata: {}, nbformat: 4, nbformat_minor: 5 };
 const pushed = await pushNotebook(auth, slug, nb as never, { gpu: true, internet: true, timeoutSeconds: 43200 });
 console.log('pushed', slug, (pushed as { url?: string }).url ?? '', JSON.stringify(env));
-for (let i = 0; i < 6; i++) { await new Promise((r) => setTimeout(r, 30000)); console.log('status', (await runStatus(auth, slug)).raw); }
+for (let i = 0; i < 8; i++) {
+  await new Promise((r) => setTimeout(r, 30000));
+  const st = await runStatus(auth, slug); console.log('status', st.raw, st.message ?? '');
+  if (st.state === 'error' || st.state === 'complete') {
+    const o = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
+    const log = String(o.log ?? '');
+    try { for (const l of JSON.parse(log)) console.log(String(l.data ?? '').trimEnd()); } catch { console.log(log.slice(-3000)); }
+    break;
+  }
+}
