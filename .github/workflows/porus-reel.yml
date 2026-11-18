@@ -1,0 +1,45 @@
+name: Puru reel full render (Kaggle)
+
+# Renders the full-quality Puru reel on Kaggle's free GPUs. The finished video (it carries the owner's voice)
+# is encrypted with the reel pipeline's public key and pushed in parts to the porus-reel-out branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      fetch_only:
+        description: '1 = do not start a new render, only collect the last one'
+        required: false
+        default: '0'
+
+permissions:
+  contents: write
+
+jobs:
+  reel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Render on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          FETCH_ONLY: ${{ inputs.fetch_only }}
+        run: node --experimental-strip-types scripts/porus-reel.ts 2>&1 | grep -v -i warning; exit ${PIPESTATUS[0]}
+      - name: Encrypt and publish
+        working-directory: mobile/render-out
+        run: |
+          openssl rand -hex 32 > k.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in puru_reel.mp4 -out reel.enc -pass file:k.txt
+          openssl pkeyutl -encrypt -pubin -inkey ../scripts/porus_pub.key.txt -in k.txt -out k.enc
+          split -b 90m -d reel.enc reel.enc.part
+          rm k.txt puru_reel.mp4 reel.enc
+          mkdir -p /tmp/pub && cp reel.enc.part* k.enc /tmp/pub/
+          cd $GITHUB_WORKSPACE && git config user.name "swaram-bot" && git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan reel-tmp && git rm -rf -q . && cp /tmp/pub/* . && git add reel.enc.part* k.enc
+          git commit -q -m "encrypted reel $(date -u +%FT%TZ)" && git push -f origin HEAD:porus-reel-out
