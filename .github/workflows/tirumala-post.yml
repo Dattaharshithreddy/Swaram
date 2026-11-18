@@ -1,0 +1,41 @@
+name: Tirumala reel finish (voice, music, Telugu captions)
+
+# Pulls the rendered frames and narration from the private HF bucket, adds the temple music and the Telugu overlay
+# (skillvideo reels/tirumala-stay/hf/post_job.sh) and puts the final MP4 back in the bucket under final/.
+on:
+  workflow_dispatch:
+  push:
+    branches: [render/tirumala]
+    paths: [render/post.json]
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Get the reel project and the rendered frames
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /tmp/sv
+          sudo mkdir -p /out && sudo chown $USER /out
+          pip install -q -U huggingface_hub
+          python3 - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          api = HfApi(token=os.environ['HF_TOKEN']); B = 'hf://buckets/HarshithReddy05/tirumala-reel'
+          for sub in ('seq', 'audio', 'kaggle_meta'):
+              os.makedirs('/out/' + sub, exist_ok=True); api.sync_bucket(f'{B}/{sub}', '/out/' + sub, quiet=True)
+          print({s: len(os.listdir('/out/' + s)) for s in ('seq', 'audio', 'kaggle_meta')})
+          PY
+          cp /out/kaggle_meta/timing.json /out/kaggle_meta/labels.json /out/
+      - name: Mix and add the Telugu overlay
+        run: |
+          sed -i 's/--concurrency=8/--concurrency=4/; s/^apt-get /sudo apt-get /' /tmp/sv/reels/tirumala-stay/hf/post_job.sh
+          bash /tmp/sv/reels/tirumala-stay/hf/post_job.sh > post.txt 2>&1; code=$?
+          echo "::notice title=Finish::$(grep -v '^+' post.txt | tail -15 | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
+      - name: Put the final video in the bucket
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/out/final','hf://buckets/HarshithReddy05/tirumala-reel/final',quiet=True);print(os.listdir('/out/final'))"
