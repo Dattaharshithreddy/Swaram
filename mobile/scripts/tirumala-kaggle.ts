@@ -37,17 +37,22 @@ subprocess.run("pip -q install -U huggingface_hub", shell=True)
 from huggingface_hub import HfApi
 api = HfApi(token=os.environ["HF_TOKEN"]); B = "hf://buckets/HarshithReddy05/tirumala-reel"
 os.makedirs("/out/mf", exist_ok=True); os.makedirs("/out/audio", exist_ok=True)
-for sub in ("mf", "audio"):
+def _pull(sub):
     try: api.sync_bucket(B + "/" + sub, "/out/" + sub, include=["*.glb", "*.wav"], quiet=True)
     except Exception as e: print("sync in", sub, e)
+for sub in ("mf", "audio"):
+    _t = threading.Thread(target=_pull, args=(sub,), daemon=True); _t.start(); _t.join(240)
 print(os.listdir("/out/mf"), len(os.listdir("/out/audio")))
 tag = CFG["TAG"]; os.makedirs("/out/" + tag, exist_ok=True); done = False
-try: api.sync_bucket(B + "/" + tag, "/out/" + tag, quiet=True)   # resume: frames already rendered are skipped
-except Exception as e: print("resume sync", e)
+def _resume():   # resume: frames already rendered are skipped (never let this block the render)
+    try: api.sync_bucket(B + "/" + tag, "/out/" + tag, quiet=True)
+    except Exception as e: print("resume sync", e)
+_t = threading.Thread(target=_resume, daemon=True); _t.start(); _t.join(90)
+print("resume:", len(os.listdir("/out/" + tag)), "frames already done", flush=True)
 def pusher():
     while not done:
         time.sleep(180)
-        try: api.sync_bucket("/out/" + tag, B + "/" + tag, quiet=True); print("synced", len(os.listdir("/out/" + tag)), flush=True)
+        try: print('syncing', len(os.listdir('/out/' + tag)), flush=True); api.sync_bucket("/out/" + tag, B + "/" + tag, quiet=True); print("synced", len(os.listdir("/out/" + tag)), flush=True)
         except Exception as e: print("sync out", e, flush=True)
 threading.Thread(target=pusher, daemon=True).start()
 subprocess.run("""git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && bash /w/sv/reels/tirumala-stay/hf/render_job.sh 2>&1 | grep --line-buffered -E 'Saved|rror|frames |RENDER_JOB|Traceback' | awk '{ print strftime("%H:%M:%S"), $0; fflush() }'""", shell=True)
