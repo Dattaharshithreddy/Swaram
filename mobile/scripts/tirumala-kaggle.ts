@@ -46,11 +46,11 @@ try: api.sync_bucket(B + "/" + tag, "/out/" + tag, quiet=True)   # resume: frame
 except Exception as e: print("resume sync", e)
 def pusher():
     while not done:
-        time.sleep(600)
+        time.sleep(180)
         try: api.sync_bucket("/out/" + tag, B + "/" + tag, quiet=True); print("synced", len(os.listdir("/out/" + tag)), flush=True)
         except Exception as e: print("sync out", e, flush=True)
 threading.Thread(target=pusher, daemon=True).start()
-subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && bash /w/sv/reels/tirumala-stay/hf/render_job.sh 2>&1 | tail -80", shell=True)
+subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && bash /w/sv/reels/tirumala-stay/hf/render_job.sh 2>&1 | grep --line-buffered -E \"Saved|rror|frames |RENDER_JOB|Traceback\" | awk '{ print strftime(\"%H:%M:%S\"), $0; fflush() }'", shell=True)
 done = True
 api.sync_bucket("/out/" + tag, B + "/" + tag, quiet=True)
 import shutil
@@ -69,6 +69,23 @@ async function pushWait(sl: string, book: unknown) {
 }
 const nParts = Number(cfg.parts ?? 1);
 const only: number[] = cfg.only ?? [];
+if (cfg.watch) {
+  const t0 = Date.now(); const k = Number(cfg.watch); const sl = `${slug}-p${k}`;
+  const e2: Record<string, string> = { ...env, START: `part${k}of${nParts}` }; delete e2.FRAMES;
+  let restarts = 0;
+  console.log('start', sl, JSON.stringify(await pushWait(sl, mkNb(e2))));
+  while (Date.now() - t0 < 345 * 60000) {
+    await new Promise((r) => setTimeout(r, 120000));
+    const st = await runStatus(auth, sl).catch(() => ({ state: 'unknown', raw: '?' } as { state: string; raw: string }));
+    const m = Math.round((Date.now() - t0) / 60000);
+    if (st.state === 'complete') { console.log(m, 'min: part', k, 'complete'); process.exit(0); }
+    if (st.state === 'error' || st.state === 'cancelled' || st.raw.includes('CANCEL')) {
+      restarts++; console.log(m, 'min: part', k, st.raw, '-> restarting (', restarts, ')');
+      await new Promise((r) => setTimeout(r, 20000)); await pushWait(sl, mkNb(e2));
+    } else if (m % 20 < 2) console.log(m, 'min:', st.raw);
+  }
+  console.log('watch window over, part', k, 'still running'); process.exit(0);
+}
 for (let k = 1; k <= nParts; k++) {
   if (only.length && !only.includes(k)) continue;
   const e2: Record<string, string> = nParts > 1 ? { ...env, START: `part${k}of${nParts}` } : env;

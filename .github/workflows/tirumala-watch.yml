@@ -1,0 +1,33 @@
+name: Tirumala reel render watchdog (Kaggle)
+
+# Keeps both halves of the full render alive on Kaggle: restarts a part if its session is cancelled or fails
+# (frames already in the bucket are skipped), for up to ~6 h. Runs when render/watch.json changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [render/tirumala]
+    paths: [render/watch.json]
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Render part ${{ matrix.part }} and keep it alive
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          echo '{ "tag": "seq", "spp": 64, "parts": 2, "watch": ${{ matrix.part }} }' > ../render/tirumala.json
+          node --experimental-strip-types scripts/tirumala-kaggle.ts 2>&1 | grep -v -i -e warning -e reparsing -e trace-warnings | tee out.txt
+          echo "::notice title=Part ${{ matrix.part }}::$(tail -25 out.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"
