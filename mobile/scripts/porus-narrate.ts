@@ -36,7 +36,7 @@ console.log('weights', ckpt, '| recordings', datasets.join(', ') || 'NONE');
 if (!datasets.length) throw new Error('recordings dataset not found');
 const refWav = new Uint8Array(0); const refText = '';
 // 2. the script
-let parts = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; para: number; mood: string; text: string; speed: number }[];
+let parts: any[] = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; para: number; mood: string; text: string; speed: number }[];
 if (ONLY.length) parts = parts.filter((p) => ONLY.includes(p.i));
 const emoSrc = readFileSync('src/edge/emotions.ts', 'utf-8');
 const READS: Record<string, string> = {};
@@ -78,6 +78,29 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 `    APP_RENDER['voices']['datta_' + _e] = dict(APP_RENDER['voices']['datta'], text=' '.join(_x[2] for _x in _sel), wav_base64=base64.b64encode(open(f'/kaggle/working/ref_{_e}.wav', 'rb').read()).decode())\n` +
 `for _p in APP_RENDER['parts']:\n    _e = _MOODS.get(_LINE_MOOD.get(str(_p['i'])) or _LINE_MOOD.get(_p['i'], ''))\n    if _e and ('datta_' + _e) in APP_RENDER['voices']: _p['voice'] = 'datta_' + _e; _p['speed'] = 1.0\n` +
 `print('lines with a mood clip:', sum(_p['voice'] != 'datta' for _p in APP_RENDER['parts']), 'of', len(APP_RENDER['parts']))` });
+
+// fix mode: redo chosen lines with the owner's own finished narration (encrypted on porus-src) as reference
+const FIX = process.env.FIX === '1';
+if (FIX) {
+  const spec = {"0": [[1.82, 6.18]], "8": [[16.061, 18.761], [19.201, 21.361]], "19": [[48.602, 50.542], [54.642, 56.963]], "48": [[136.626, 137.546], [138.906, 140.046], [140.526, 143.286]]} as Record<string, number[][]>;
+  const refs = {"0": [1], "8": [6, 7], "19": [18, 20], "48": [47, 49, 50]} as Record<string, number[]>;
+  const all = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; text: string }[];
+  const fixParts = Object.keys(spec).flatMap((k) => [0, 1].map((t) => ({ i: t * 1000 + Number(k), voice: `r${k}`, text: all[Number(k)].text, speed: 1.0 })));
+  const voices: Record<string, unknown> = {};
+  for (const k of Object.keys(spec)) voices[`r${k}`] = { text: refs[k].map((r) => all[r].text).join(' '), wav_base64: '', ckpt_name: ckpt };
+  const fjob = { steps: Number(process.env.STEPS ?? 40), cfg: 2.0, voices, parts: fixParts };
+  nb.cells[1] = { cell_type: 'code', metadata: {}, outputs: [], execution_count: null,
+    source: `import os, json, base64, subprocess, urllib.request, numpy as _np, soundfile as _sf, librosa as _lr\nfrom huggingface_hub import hf_hub_download\nos.environ["HF_TOKEN"] = ${JSON.stringify(hf)}\nAPP_RENDER = ${JSON.stringify(fjob)}\n_SPEC = ${JSON.stringify(spec)}\n` +
+`_key = open(hf_hub_download('HarshithReddy05/porus-private', 'key.txt', repo_type='dataset', token=os.environ['HF_TOKEN'])).read().strip()\n` +
+`urllib.request.urlretrieve('https://raw.githubusercontent.com/Dattaharshithreddy/Swaram/porus-src/up.opus.enc', '/tmp/a.enc')\n` +
+`subprocess.run(['openssl', 'enc', '-d', '-aes-256-cbc', '-pbkdf2', '-in', '/tmp/a.enc', '-out', '/tmp/a.opus', '-pass', 'pass:' + _key], check=True)\n` +
+`subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', '/tmp/a.opus', '-ar', '24000', '-ac', '1', '/tmp/a.wav'], check=True)\n` +
+`_w, _ = _lr.load('/tmp/a.wav', sr=24000, mono=True)\n_gap = _np.zeros(int(0.3 * 24000), dtype=_np.float32)\n` +
+`for _k, _segs in _SPEC.items():\n    _ws = []\n    for _a, _b in _segs: _ws += [_w[int(max(0, _a - 0.05) * 24000):int((_b + 0.08) * 24000)], _gap]\n` +
+`    _sf.write('/tmp/r.wav', _np.concatenate(_ws[:-1]), 24000)\n    APP_RENDER['voices']['r' + _k]['wav_base64'] = base64.b64encode(open('/tmp/r.wav', 'rb').read()).decode()\n` +
+`for _f in ('/tmp/a.enc', '/tmp/a.opus', '/tmp/a.wav', '/tmp/r.wav'): os.remove(_f)\nprint('fix refs ready', list(_SPEC))` };
+  parts = fixParts.map((p) => ({ ...p, para: 0, mood: 'fix' }));
+}
 
 // 3. run it
 const slug = 'swaram-porus-narration';
