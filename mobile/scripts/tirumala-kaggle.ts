@@ -14,6 +14,13 @@ const cfg = JSON.parse(readFileSync('../render/tirumala.json', 'utf8'));
 const env: Record<string, string> = { TAG: cfg.tag, SPP: String(cfg.spp ?? 64) };
 if (cfg.start) { env.START = String(cfg.start); env.END = String(cfg.end); } else env.FRAMES = String(cfg.frames ?? 'auto');
 const slug = 'tirumala-reel-render';
+if (cfg.logonly) {
+  const st = await runStatus(auth, slug); console.log('status', st.raw);
+  const o = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
+  const lines: string[] = []; try { for (const l of JSON.parse(String(o.log ?? ''))) lines.push(String(l.data ?? '').trimEnd()); } catch { lines.push(String(o.log ?? '')); }
+  console.log(lines.join('\n').split('\n').filter((l) => /rror|CYCLES|OPTIX|CUDA|Saved|Traceback|device|RENDER|GPU|frame|Fra:/i.test(l)).slice(-40).join('\n'));
+  process.exit(0);
+}
 const code = `import os, subprocess, threading, time
 os.environ["HF_TOKEN"] = ${JSON.stringify(hf)}
 CFG = ${JSON.stringify(env)}
