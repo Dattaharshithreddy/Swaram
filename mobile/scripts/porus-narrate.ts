@@ -107,6 +107,35 @@ if (FIX) {
   parts = fixParts.map((p) => ({ ...p, para: 0, mood: 'fix' }));
 }
 
+// mood mode: the whole narration again, each line from a mood clip cut out of the owner's server narration
+// (that narration was made with the server's mood clips, so its lines carry each mood's delivery)
+if (process.env.MOODS === '1') {
+  const AL = {"0": [0.4, 1.82], "1": [1.82, 6.18], "2": [6.72, 9.4], "3": [10.0, 11.681], "4": [12.181, 13.441], "5": [13.861, 15.241], "6": [16.061, 18.761], "7": [19.201, 21.361], "8": [21.681, 22.541], "9": [23.321, 26.901], "10": [27.321, 28.361], "11": [28.681, 32.181], "12": [32.561, 33.762], "13": [34.582, 36.722], "14": [37.082, 38.962], "15": [39.442, 42.522], "16": [43.062, 45.762], "17": [46.142, 47.762], "18": [48.602, 50.542], "19": [50.902, 54.322], "20": [54.642, 56.963], "21": [57.383, 59.583], "22": [59.923, 62.303], "23": [63.163, 65.223], "24": [65.763, 69.323], "25": [69.763, 73.443], "26": [73.803, 75.943], "27": [76.763, 79.464], "28": [79.744, 81.284], "29": [81.624, 83.004], "30": [83.444, 85.224], "31": [86.024, 87.404], "32": [87.824, 89.244], "33": [89.764, 93.504], "34": [93.984, 95.584], "35": [96.004, 99.164], "36": [99.684, 102.905], "37": [103.765, 106.405], "38": [106.905, 108.805], "39": [109.305, 111.825], "40": [112.285, 115.925], "41": [116.785, 118.625], "42": [118.925, 121.965], "43": [122.446, 126.506], "44": [126.866, 129.286], "45": [130.066, 131.366], "46": [131.706, 135.886], "47": [136.626, 137.546], "48": [137.886, 138.626], "49": [138.906, 140.046], "50": [140.526, 143.286], "51": [143.806, 144.927]} as Record<string, number[]>;
+  const MOODREFS = {"story": [1, 40], "talk": [35, 43], "anger": [7, 32, 33], "sad": [9, 46], "disgust": [10, 11, 12], "surprise": [15, 25], "fear": [23, 24], "happy": [41, 42, 51]} as Record<string, number[]>;
+  const all = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; para: number; mood: string; text: string }[];
+  const spec: Record<string, number[][]> = {}; const voices: Record<string, unknown> = {};
+  for (const [m, ids] of Object.entries(MOODREFS)) {
+    spec[m] = ids.map((i) => AL[String(i)]);
+    voices[`m_${m}`] = { text: ids.map((i) => all[i].text).join(' '), wav_base64: '', ckpt_name: ckpt };
+  }
+  const mparts = all.map((p) => { const m = p.mood.split(',')[0].trim(); return { i: p.i, voice: `m_${MOODREFS[m] ? m : 'story'}`, text: p.text, speed: p.mood.includes('slow') ? 0.92 : 1.0 }; });
+  const mjob = { steps: Number(process.env.STEPS ?? 40), cfg: 2.0, voices, parts: mparts };
+  nb.cells[1] = { cell_type: 'code', metadata: {}, outputs: [], execution_count: null,
+    source: `import os, json, base64, subprocess, urllib.request, numpy as _np, soundfile as _sf, librosa as _lr\nfrom huggingface_hub import hf_hub_download\nos.environ["HF_TOKEN"] = ${JSON.stringify(hf)}\nAPP_RENDER = ${JSON.stringify(mjob)}\n_SPEC = ${JSON.stringify(spec)}\n` +
+`_key = open(hf_hub_download('HarshithReddy05/porus-private', 'key.txt', repo_type='dataset', token=os.environ['HF_TOKEN'])).read().strip()\n` +
+`urllib.request.urlretrieve('https://raw.githubusercontent.com/Dattaharshithreddy/Swaram/porus-src/up.opus.enc', '/tmp/a.enc')\n` +
+`subprocess.run(['openssl', 'enc', '-d', '-aes-256-cbc', '-pbkdf2', '-in', '/tmp/a.enc', '-out', '/tmp/a.opus', '-pass', 'pass:' + _key], check=True)\n` +
+`subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', '/tmp/a.opus', '-ar', '24000', '-ac', '1', '/tmp/a.wav'], check=True)\n` +
+`_w, _ = _lr.load('/tmp/a.wav', sr=24000, mono=True)\n_gap = _np.zeros(int(0.3 * 24000), dtype=_np.float32)\n` +
+`for _k, _segs in _SPEC.items():\n    _ws = []\n    for _a, _b in _segs: _ws += [_w[int(max(0, _a - 0.05) * 24000):int((_b + 0.08) * 24000)], _gap]\n` +
+`    _sf.write('/tmp/r.wav', _np.concatenate(_ws[:-1]), 24000)\n    APP_RENDER['voices']['m_' + _k]['wav_base64'] = base64.b64encode(open('/tmp/r.wav', 'rb').read()).decode()\n` +
+`for _f in ('/tmp/a.enc', '/tmp/a.opus', '/tmp/a.wav', '/tmp/r.wav'): os.remove(_f)\nprint('mood clips ready', list(_SPEC))` };
+  nb.cells.push({ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source:
+`import glob, torch\nfrom transformers import pipeline\n_p = pipeline('automatic-speech-recognition', model='openai/whisper-large-v3', torch_dtype=torch.float16, device=0)\n` +
+`for _f in sorted(glob.glob('/tmp/render/out/parts/*.wav')):\n    _t = _p(_f, generate_kwargs={'language': 'telugu', 'task': 'transcribe'})['text']\n    print('###CHK ' + _f.split('/')[-1] + ' ' + _t.strip())` });
+  parts = mparts.map((p) => ({ ...p, para: all[p.i].para, mood: all[p.i].mood }));
+}
+
 // 3. run it
 const slug = 'swaram-porus-narration';
 const t0 = Date.now();

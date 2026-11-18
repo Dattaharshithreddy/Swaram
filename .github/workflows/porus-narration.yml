@@ -11,6 +11,10 @@ on:
         description: 'Comma-separated sentence numbers to re-render (empty = all)'
         required: false
         default: ''
+      moods:
+        description: '1 = whole narration again from mood clips cut out of the owner server narration'
+        required: false
+        default: '0'
       fix:
         description: '1 = redo the fix lines using the owner narration as reference'
         required: false
@@ -41,6 +45,7 @@ jobs:
           ONLY: ${{ inputs.only }}
           STEPS: ${{ inputs.steps }}
           FIX: ${{ inputs.fix }}
+          MOODS: ${{ inputs.moods }}
         run: |
           set +e
           node --experimental-strip-types scripts/porus-narrate.ts > out.txt 2>&1; code=$?
