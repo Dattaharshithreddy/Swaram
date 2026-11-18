@@ -58,7 +58,7 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 // 3. run it
 const slug = 'swaram-porus-narration';
 const t0 = Date.now();
-const pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN], datasetSources: datasets });
+const pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN], datasetSources: datasets.map((d) => d.split('/').pop()!) });
 console.log('pushed', pushed.url ?? slug, parts.length, 'sentences');
 let state = '';
 for (let i = 0; i < 260; i++) {
