@@ -38,6 +38,10 @@ const refWav = new Uint8Array(0); const refText = '';
 // 2. the script
 let parts = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; para: number; mood: string; text: string; speed: number }[];
 if (ONLY.length) parts = parts.filter((p) => ONLY.includes(p.i));
+const emoSrc = readFileSync('src/edge/emotions.ts', 'utf-8');
+const READS: Record<string, string> = {};
+for (const m of emoSrc.matchAll(/(\w+): \{ label: '[^']*', telugu: '[^']*', how: '[^']*', read: '([^']*)'/g)) READS[m[1]] = m[2];
+const MOODS: Record<string, string> = { sad: 'sad', anger: 'angry', fear: 'fearful', surprise: 'surprised', happy: 'happy', disgust: 'disgusted', 'story, slow': 'calm' };
 const job = {
   steps: Number(process.env.STEPS ?? 40), cfg: 2.0,
   voices: { datta: { text: refText, wav_base64: bytesToBase64(refWav), ckpt_name: ckpt } },   // reference filled in on Kaggle
@@ -51,16 +55,29 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 `_c = []\n` +
 `for _n, _t in _rows:\n    _f = glob.glob(os.path.dirname(_m[0]) + '/**/' + _n, recursive=True)\n    if not _f: continue\n` +
 `    _d = _lr.get_duration(path=_f[0])\n    if 2.0 <= _d <= 12 and _t.strip()[-1:] in '.?!।': _c.append((_d, _f[0], _t.strip()))\n` +
-`assert _c, 'no usable recording'\nimport numpy as _np\n` +
-`def _expr(f):\n    w, _ = _lr.load(f, sr=16000, mono=True); w, _ = _lr.effects.trim(w, top_db=35)\n    f0 = _lr.yin(w, fmin=70, fmax=400, sr=16000); f0 = f0[(f0 > 75) & (f0 < 390)]\n    if len(f0) < 20: return 0.0\n    st = 12 * _np.log2(f0 / _np.median(f0)); rms = _lr.feature.rms(y=w)[0]\n    return float(_np.std(st) + 2.5 * _np.std(rms) / (_np.mean(rms) + 1e-6) * 0.3)\n` +
-`_c = sorted(_c, key=lambda x: -x[0])[:80]\n_c = sorted(((_expr(x[1]),) + x for x in _c), key=lambda x: -x[0])\nprint('expressiveness top', [round(x[0], 2) for x in _c[:6]])\n_c = [x[1:] for x in _c]\n_pick, _tot = [], 0.0\n` +
+`assert _c, 'no usable recording'\n_c.sort(key=lambda x: -x[0])\n_pick, _tot = [], 0.0\n` +
 `for _x in _c:\n    if _tot + _x[0] > 11.5: continue\n    _pick.append(_x); _tot += _x[0]\n    if _tot >= 7.5: break\n` +
-`_gap = _np.zeros(int(0.35 * 24000), dtype=_np.float32)\n_parts = []\n` +
+`import numpy as _np\n_gap = _np.zeros(int(0.35 * 24000), dtype=_np.float32)\n_parts = []\n` +
 `for _x in _pick:\n    _w, _ = _lr.load(_x[1], sr=24000, mono=True); _w, _ = _lr.effects.trim(_w, top_db=35); _parts += [_w, _gap]\n` +
 `_sf.write('/kaggle/working/ref.wav', _np.concatenate(_parts[:-1]), 24000)\n` +
 `print('reference from', len(_pick), 'recordings,', round(_tot, 1), 's')\n` +
 `APP_RENDER['voices']['datta']['wav_base64'] = base64.b64encode(open('/kaggle/working/ref.wav', 'rb').read()).decode()\n` +
-`APP_RENDER['voices']['datta']['text'] = ' '.join(_x[2] for _x in _pick)` });
+`APP_RENDER['voices']['datta']['text'] = ' '.join(_x[2] for _x in _pick)` + '\n' +
+// mood clips: the owner's own emotion recordings (same idea as the server's mood clips) give each line its tone
+`_READS = ${JSON.stringify(READS)}\n_MOODS = ${JSON.stringify(MOODS)}\n_LINE_MOOD = ${JSON.stringify(Object.fromEntries(parts.map((p) => [p.i, p.mood])))}\n` +
+`import json as _js, re as _re\n_norm = lambda t: _re.sub(r'[^\\u0C00-\\u0C7F]', '', t)\n_emo = {}\n` +
+`for _e in glob.glob('/kaggle/input/**/emotions.json', recursive=True):\n    try: _emo.update({str(k): v for k, v in _js.load(open(_e)).items() if v})\n    except Exception as _x: print('emotions.json unreadable', _x)\n` +
+`_byemo = {}\n` +
+`for _k, (_n, _t) in enumerate(_rows):\n    _f = glob.glob(os.path.dirname(_m[0]) + '/**/' + _n, recursive=True)\n    if not _f: continue\n` +
+`    _e = next((e for e, r in _READS.items() if _norm(r)[:14] and _norm(_t).startswith(_norm(r)[:14])), None) or _emo.get(str(_k)) or _emo.get(os.path.splitext(_n)[0])\n` +
+`    if not _e: continue\n    _d = _lr.get_duration(path=_f[0])\n    if 1.5 <= _d <= 14: _byemo.setdefault(_e, []).append((_d, _f[0], _t.strip()))\n` +
+`print('mood recordings found:', {k: len(v) for k, v in _byemo.items()})\n` +
+`for _e, _l in _byemo.items():\n    _l.sort(key=lambda x: -x[0]); _sel, _tt = [], 0.0\n    for _x in _l:\n        if _tt + _x[0] > 11: continue\n        _sel.append(_x); _tt += _x[0]\n        if _tt >= 5: break\n` +
+`    _ws = []\n    for _x in _sel:\n        _w, _ = _lr.load(_x[1], sr=24000, mono=True); _w, _ = _lr.effects.trim(_w, top_db=35); _ws += [_w, _gap]\n` +
+`    _sf.write(f'/kaggle/working/ref_{_e}.wav', _np.concatenate(_ws[:-1]), 24000)\n` +
+`    APP_RENDER['voices']['datta_' + _e] = dict(APP_RENDER['voices']['datta'], text=' '.join(_x[2] for _x in _sel), wav_base64=base64.b64encode(open(f'/kaggle/working/ref_{_e}.wav', 'rb').read()).decode())\n` +
+`for _p in APP_RENDER['parts']:\n    _e = _MOODS.get(_LINE_MOOD.get(str(_p['i'])) or _LINE_MOOD.get(_p['i'], ''))\n    if _e and ('datta_' + _e) in APP_RENDER['voices']: _p['voice'] = 'datta_' + _e; _p['speed'] = 1.0\n` +
+`print('lines with a mood clip:', sum(_p['voice'] != 'datta' for _p in APP_RENDER['parts']), 'of', len(APP_RENDER['parts']))` });
 
 // 3. run it
 const slug = 'swaram-porus-narration';
