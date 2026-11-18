@@ -21,7 +21,9 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1
+          set -e
+          trap 'echo "::error title=Audio::failed at line $LINENO: $BASH_COMMAND"' ERR
+          sudo apt-get update -qq >/dev/null 2>&1; sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1
           pip install -q -U huggingface_hub
           python3 -c "import os;from huggingface_hub import HfApi;os.makedirs('/tmp/a',exist_ok=True);HfApi(token=os.environ['HF_TOKEN']).sync_bucket('hf://buckets/HarshithReddy05/tirumala-reel/audio','/tmp/a',quiet=True);print(sorted(os.listdir('/tmp/a')))"
           cd /tmp/a && ls l*.wav | sort | sed "s/.*/file '&'/" > l.txt
