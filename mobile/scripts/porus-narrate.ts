@@ -47,13 +47,18 @@ const nb = JSON.parse(readFileSync('../cloud/swaram_render.ipynb', 'utf-8'));
 nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_count: null,
   source: `import os, glob, base64, soundfile as _sf, librosa as _lr\nos.environ["HF_TOKEN"] = ${JSON.stringify(hf)}\nAPP_RENDER = ${JSON.stringify(job)}\n` +
 `_m = glob.glob('/kaggle/input/**/metadata.csv', recursive=True)\nassert _m, glob.glob('/kaggle/input/**', recursive=True)[:40]\n` +
-`_rows = [l.split('|', 1) for l in open(_m[0], encoding='utf-8').read().splitlines() if '|' in l]\n_best = None\n` +
+`_rows = [l.split('|', 1) for l in open(_m[0], encoding='utf-8').read().splitlines() if '|' in l]\n` +
+`_c = []\n` +
 `for _n, _t in _rows:\n    _f = glob.glob(os.path.dirname(_m[0]) + '/**/' + _n, recursive=True)\n    if not _f: continue\n` +
-`    _d = _lr.get_duration(path=_f[0])\n    _sc = abs(_d - 8.5) + (0 if _t.strip().endswith(('.', '?', '!')) else 1)\n` +
-`    if 5.5 <= _d <= 11.5 and (_best is None or _sc < _best[0]): _best = (_sc, _f[0], _t.strip(), _d)\n` +
-`assert _best, 'no usable recording'\nprint('reference', os.path.basename(_best[1]), round(_best[3], 1), 's')\n` +
-`_w, _ = _lr.load(_best[1], sr=24000, mono=True); _sf.write('/kaggle/working/ref.wav', _w, 24000)\n` +
-`APP_RENDER['voices']['datta']['wav_base64'] = base64.b64encode(open('/kaggle/working/ref.wav', 'rb').read()).decode()\nAPP_RENDER['voices']['datta']['text'] = _best[2]` });
+`    _d = _lr.get_duration(path=_f[0])\n    if 2.0 <= _d <= 12 and _t.strip()[-1:] in '.?!।': _c.append((_d, _f[0], _t.strip()))\n` +
+`assert _c, 'no usable recording'\n_c.sort(key=lambda x: -x[0])\n_pick, _tot = [], 0.0\n` +
+`for _x in _c:\n    if _tot + _x[0] > 11.5: continue\n    _pick.append(_x); _tot += _x[0]\n    if _tot >= 7.5: break\n` +
+`import numpy as _np\n_gap = _np.zeros(int(0.35 * 24000), dtype=_np.float32)\n_parts = []\n` +
+`for _x in _pick:\n    _w, _ = _lr.load(_x[1], sr=24000, mono=True); _w, _ = _lr.effects.trim(_w, top_db=35); _parts += [_w, _gap]\n` +
+`_sf.write('/kaggle/working/ref.wav', _np.concatenate(_parts[:-1]), 24000)\n` +
+`print('reference from', len(_pick), 'recordings,', round(_tot, 1), 's')\n` +
+`APP_RENDER['voices']['datta']['wav_base64'] = base64.b64encode(open('/kaggle/working/ref.wav', 'rb').read()).decode()\n` +
+`APP_RENDER['voices']['datta']['text'] = ' '.join(_x[2] for _x in _pick)` });
 
 // 3. run it
 const slug = 'swaram-porus-narration';
