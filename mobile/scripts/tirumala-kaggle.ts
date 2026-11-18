@@ -26,7 +26,7 @@ if (cfg.logonly) {
   const st = await runStatus(auth, slug); console.log('status', st.raw);
   const o = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
   const lines: string[] = []; try { for (const l of JSON.parse(String(o.log ?? ''))) lines.push(String(l.data ?? '').trimEnd()); } catch { lines.push(String(o.log ?? '')); }
-  console.log(lines.join('\n').split('\n').filter((l) => /rror|CYCLES|OPTIX|CUDA|Saved|Traceback|device|RENDER|GPU|frame|Fra:|synced|stills|frames/i.test(l)).slice(-25).join('\n'));
+  console.log(lines.join('\n').split('\n').filter((l) => !/pip's dependency|Debugger|frozen|PYDEVD|Debugging/.test(l)).slice(-45).join('\n'));
   process.exit(0);
 }
 const mkCode = (env: Record<string, string>) => `import os, subprocess, threading, time
