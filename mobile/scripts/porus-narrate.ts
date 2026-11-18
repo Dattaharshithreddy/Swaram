@@ -16,38 +16,49 @@ const ONLY = (process.env.ONLY ?? '').split(',').filter(Boolean).map(Number);   
 if (!auth.username || !auth.token) throw new Error('Kaggle secrets missing');
 mkdirSync('render-out', { recursive: true });
 
-// 1. the trained studio voice: reference clip + transcript + weights name
+// 1. the trained studio voice: weights from the training run, reference = one of the owner's own recordings
 const tr = await runOutputs(auth, TRAIN);
-const get = async (n: string) => {
-  const f = tr.files.find((x) => x.fileName.endsWith(n));
-  if (!f) throw new Error(`${n} not in ${TRAIN} outputs: ${tr.files.map((x) => x.fileName).join(', ')}`);
-  return new Uint8Array(await (await fetch(f.url)).arrayBuffer());
-};
-const meta = JSON.parse(new TextDecoder().decode(await get('studio-voice.json')));
-console.log('studio voice fields:', Object.keys(meta).join(', '));
 const ckpt = tr.files.map((f) => f.fileName.split('/').pop()!).find((n) => n.endsWith('.safetensors'))!;
-const refText: string = meta.text ?? meta.ref_text ?? meta.reference_text ?? meta.sample_text ?? meta.transcript ?? '';
-let refWav = await get('sample.wav');
-if (meta.ref_wav_base64) refWav = Uint8Array.from(atob(meta.ref_wav_base64), (c) => c.charCodeAt(0));
-console.log('weights', ckpt, '| reference text', refText ? `${refText.length} chars` : 'MISSING', '| reference', refWav.length, 'bytes');
-if (!refText) throw new Error('no reference transcript in studio-voice.json');
-
+const tok = auth.token.trim();
+const authHeader = /^[0-9a-f]{32}$/i.test(tok) ? `Basic ${btoa(`${auth.username.trim()}:${tok}`)}` : `Bearer ${tok}`;
+const k = await (await fetch('https://api.kaggle.com/v1/kernels.KernelsApiService/GetKernel', { method: 'POST',
+  headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authHeader },
+  body: JSON.stringify({ userName: auth.username.trim(), kernelSlug: TRAIN }) })).json() as Record<string, any>;
+const meta = k.metadata ?? k;
+let datasets: string[] = (meta.datasetDataSources ?? meta.dataset_data_sources ?? []) as string[];
+if (!datasets.length) {
+  const l = await (await fetch('https://api.kaggle.com/v1/datasets.DatasetApiService/ListDatasets', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authHeader },
+    body: JSON.stringify({ user: auth.username.trim(), search: 'swaram-pro', page: 1 }) })).json() as Record<string, any>;
+  datasets = ((l.datasets ?? []) as { ref?: string }[]).map((d) => d.ref ?? '').filter((r) => r && !r.includes('check'));
+}
+console.log('weights', ckpt, '| recordings', datasets.join(', ') || 'NONE');
+if (!datasets.length) throw new Error('recordings dataset not found');
+const refWav = new Uint8Array(0); const refText = '';
 // 2. the script
 let parts = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; para: number; mood: string; text: string; speed: number }[];
 if (ONLY.length) parts = parts.filter((p) => ONLY.includes(p.i));
 const job = {
   steps: Number(process.env.STEPS ?? 40), cfg: 2.0,
-  voices: { datta: { text: refText, wav_base64: bytesToBase64(refWav), ckpt_name: ckpt } },
+  voices: { datta: { text: refText, wav_base64: bytesToBase64(refWav), ckpt_name: ckpt } },   // reference filled in on Kaggle
   parts: parts.map((p) => ({ i: p.i, voice: 'datta', text: p.text, speed: p.speed })),
 };
 const nb = JSON.parse(readFileSync('../cloud/swaram_render.ipynb', 'utf-8'));
 nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_count: null,
-  source: `import os\nos.environ["HF_TOKEN"] = ${JSON.stringify(hf)}\nAPP_RENDER = ${JSON.stringify(job)}` });
+  source: `import os, glob, base64, soundfile as _sf, librosa as _lr\nos.environ["HF_TOKEN"] = ${JSON.stringify(hf)}\nAPP_RENDER = ${JSON.stringify(job)}\n` +
+`_m = glob.glob('/kaggle/input/**/metadata.csv', recursive=True)\nassert _m, glob.glob('/kaggle/input/**', recursive=True)[:40]\n` +
+`_rows = [l.split('|', 1) for l in open(_m[0], encoding='utf-8').read().splitlines() if '|' in l]\n_best = None\n` +
+`for _n, _t in _rows:\n    _f = glob.glob(os.path.dirname(_m[0]) + '/**/' + _n, recursive=True)\n    if not _f: continue\n` +
+`    _d = _lr.get_duration(path=_f[0])\n    _sc = abs(_d - 8.5) + (0 if _t.strip().endswith(('.', '?', '!')) else 1)\n` +
+`    if 5.5 <= _d <= 11.5 and (_best is None or _sc < _best[0]): _best = (_sc, _f[0], _t.strip(), _d)\n` +
+`assert _best, 'no usable recording'\nprint('reference', os.path.basename(_best[1]), round(_best[3], 1), 's')\n` +
+`_w, _ = _lr.load(_best[1], sr=24000, mono=True); _sf.write('/kaggle/working/ref.wav', _w, 24000)\n` +
+`APP_RENDER['voices']['datta']['wav_base64'] = base64.b64encode(open('/kaggle/working/ref.wav', 'rb').read()).decode()\nAPP_RENDER['voices']['datta']['text'] = _best[2]` });
 
 // 3. run it
 const slug = 'swaram-porus-narration';
 const t0 = Date.now();
-const pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN] });
+const pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN], datasetSources: datasets });
 console.log('pushed', pushed.url ?? slug, parts.length, 'sentences');
 let state = '';
 for (let i = 0; i < 260; i++) {
