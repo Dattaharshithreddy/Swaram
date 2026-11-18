@@ -44,7 +44,7 @@ jobs:
         run: |
           set +e
           node --experimental-strip-types scripts/porus-narrate.ts > out.txt 2>&1; code=$?
-          grep -v -i warning out.txt | tail -40
+          grep -v -i warning out.txt | tail -40; grep -a '###CHK' out.txt || true
           level=notice; [ $code -ne 0 ] && level=error
           echo "::$level title=Puru narration::$(grep -v -i warning out.txt | tail -25 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
           exit $code
