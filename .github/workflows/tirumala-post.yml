@@ -24,8 +24,8 @@ jobs:
           import os
           from huggingface_hub import HfApi
           api = HfApi(token=os.environ['HF_TOKEN']); B = 'hf://buckets/HarshithReddy05/tirumala-reel'
-          for sub in ('seq', 'audio', 'kaggle_meta'):
-              os.makedirs('/out/' + sub, exist_ok=True); api.sync_bucket(f'{B}/{sub}', '/out/' + sub, quiet=True)
+          for sub, src in (('seq', 'seq2'), ('audio', 'audio'), ('kaggle_meta', 'kaggle_meta')):
+              os.makedirs('/out/' + sub, exist_ok=True); api.sync_bucket(f'{B}/{src}', '/out/' + sub, quiet=True)
           print({s: len(os.listdir('/out/' + s)) for s in ('seq', 'audio', 'kaggle_meta')})
           PY
           cp /out/kaggle_meta/timing.json /out/kaggle_meta/labels.json /out/

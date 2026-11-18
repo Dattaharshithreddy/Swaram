@@ -7,6 +7,10 @@ on:
     branches: [render/tirumala]
     paths: [render/gha.json]
 
+concurrency:
+  group: tirumala-gha
+  cancel-in-progress: true
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -50,8 +54,8 @@ jobs:
           sudo mkdir -p /opt/reel && sudo chown -R $USER /opt/reel
           # CPU: Cycles on all cores; test mode renders 3 frames to time it
           sed -i "s/for dt in ('OPTIX', 'CUDA'):/for dt in ():/" /tmp/sv/reels/tirumala-stay/hf/cycles_hq.py
-          if [ "$TEST" = 1 ]; then export TAG=gha_test FRAMES=1201,1202,1203; else export TAG=seq START=part${{ matrix.slice }}of$N; fi
-          export SPP
+          if [ "$TEST" = 1 ]; then export TAG=gha_test FRAMES=1201,1202,1203; else export TAG=seq2 START=part${{ matrix.slice }}of$N; fi
+          export SPP RESPCT=$(python3 -c "import json;print(json.load(open('render/gha.json')).get('respct',100))")
           (while sleep 240; do python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/out/$TAG','hf://buckets/HarshithReddy05/tirumala-reel/$TAG',quiet=True)" 2>/dev/null; done) &
           time bash $J 2>&1 | grep -E "Saved|rror|frames |RENDER_JOB|Time:|CYCLES" | tail -40 | tee r.txt
           python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/out/$TAG','hf://buckets/HarshithReddy05/tirumala-reel/$TAG',quiet=True)"
