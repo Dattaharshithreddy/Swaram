@@ -82,10 +82,12 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 // fix mode: redo chosen lines with the owner's own finished narration (encrypted on porus-src) as reference
 const FIX = process.env.FIX === '1';
 if (FIX) {
-  const spec = {"0": [[1.82, 6.18]], "8": [[16.061, 18.761], [19.201, 21.361]], "19": [[48.602, 50.542], [54.642, 56.963]], "48": [[136.626, 137.546], [138.906, 140.046], [140.526, 143.286]]} as Record<string, number[][]>;
-  const refs = {"0": [1], "8": [6, 7], "19": [18, 20], "48": [47, 49, 50]} as Record<string, number[]>;
+  const spec = {"8": [[16.061, 18.761], [19.201, 21.361]]} as Record<string, number[][]>;
+  const refs = {"8": [6, 7]} as Record<string, number[]>;
+  // spellings to try for a line the voice keeps saying wrong; a Whisper check afterwards shows which one came out right
+  const VARIANTS: Record<string, string[]> = { '8': ['కానీ ఆయుధాలతో!', 'కానీ… ఆయుధాలతో!', 'కానీ ఆ యుధాలతో!', 'కానీ ఆయుధా లతో!', 'కానీ, ఆయుధాలతోనే!'] };
   const all = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; text: string }[];
-  const fixParts = Object.keys(spec).flatMap((k) => [0, 1].map((t) => ({ i: t * 1000 + Number(k), voice: `r${k}`, text: all[Number(k)].text, speed: 1.0 })));
+  const fixParts = Object.keys(spec).flatMap((k) => (VARIANTS[k] ?? [all[Number(k)].text, all[Number(k)].text]).flatMap((text, v) => [0, 1].map((t) => ({ i: (v * 2 + t) * 1000 + Number(k), voice: `r${k}`, text, speed: 1.0 }))));
   const voices: Record<string, unknown> = {};
   for (const k of Object.keys(spec)) voices[`r${k}`] = { text: refs[k].map((r) => all[r].text).join(' '), wav_base64: '', ckpt_name: ckpt };
   const fjob = { steps: Number(process.env.STEPS ?? 40), cfg: 2.0, voices, parts: fixParts };
@@ -99,6 +101,9 @@ if (FIX) {
 `for _k, _segs in _SPEC.items():\n    _ws = []\n    for _a, _b in _segs: _ws += [_w[int(max(0, _a - 0.05) * 24000):int((_b + 0.08) * 24000)], _gap]\n` +
 `    _sf.write('/tmp/r.wav', _np.concatenate(_ws[:-1]), 24000)\n    APP_RENDER['voices']['r' + _k]['wav_base64'] = base64.b64encode(open('/tmp/r.wav', 'rb').read()).decode()\n` +
 `for _f in ('/tmp/a.enc', '/tmp/a.opus', '/tmp/a.wav', '/tmp/r.wav'): os.remove(_f)\nprint('fix refs ready', list(_SPEC))` };
+  nb.cells.push({ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source:
+`import glob, json, torch\nfrom transformers import pipeline\n_p = pipeline('automatic-speech-recognition', model='openai/whisper-large-v3', torch_dtype=torch.float16, device=0)\n` +
+`for _f in sorted(glob.glob('/tmp/render/out/parts/*.wav')):\n    _t = _p(_f, generate_kwargs={'language': 'telugu', 'task': 'transcribe'})['text']\n    print('###CHK ' + _f.split('/')[-1] + ' ' + _t.strip())` });
   parts = fixParts.map((p) => ({ ...p, para: 0, mood: 'fix' }));
 }
 
@@ -123,6 +128,7 @@ if (state !== 'complete') {
   console.log(body.slice(-60).join('\n'));
   throw new Error(`narration run ended as ${state}`);
 }
+for (const l of (out.log ?? '').split('\\n')) { const m = l.match(/###CHK[^"]*/); if (m) console.log(m[0]); }
 if ((out.log ?? '').includes('Trained model not found')) console.log('WARNING: studio weights not found, used the normal model');
 const zip = out.files.find((f) => f.fileName.endsWith('swaram-render.zip'));
 if (!zip) throw new Error(`no swaram-render.zip in ${out.files.map((f) => f.fileName).join(', ')}`);
