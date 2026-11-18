@@ -85,9 +85,9 @@ if (FIX) {
   const spec = {"8": [[16.061, 18.761], [19.201, 21.361]]} as Record<string, number[][]>;
   const refs = {"8": [6, 7]} as Record<string, number[]>;
   // spellings to try for a line the voice keeps saying wrong; a Whisper check afterwards shows which one came out right
-  const VARIANTS: Record<string, string[]> = { '8': ['కానీ ఆయుధాలతో!', 'కానీ… ఆయుధాలతో!', 'కానీ ఆ యుధాలతో!', 'కానీ ఆయుధా లతో!', 'కానీ, ఆయుధాలతోనే!'] };
+  const VARIANTS: Record<string, [string, number][]> = { '8': [['కానీ ఆయుధాలతో!', 0.85], ['కానీ ఆయూధాలతో!', 1.0], ['కానీ ఆయూధాలతో!', 0.88], ['సరిహద్దులోనే కలుద్దాం… కానీ ఆయుధాలతో!', 1.0], ['సరిహద్దులోనే కలుద్దాం… కానీ ఆయూధాలతో!', 1.0], ['పురు జవాబు ఒక్కటే… సరిహద్దులోనే కలుద్దాం… కానీ ఆయుధాలతో!', 1.0]] };
   const all = JSON.parse(readFileSync('scripts/porus_parts.json', 'utf-8')) as { i: number; text: string }[];
-  const fixParts = Object.keys(spec).flatMap((k) => (VARIANTS[k] ?? [all[Number(k)].text, all[Number(k)].text]).flatMap((text, v) => [0, 1].map((t) => ({ i: (v * 2 + t) * 1000 + Number(k), voice: `r${k}`, text, speed: 1.0 }))));
+  const fixParts = Object.keys(spec).flatMap((k) => (VARIANTS[k] ?? [[all[Number(k)].text, 1.0], [all[Number(k)].text, 1.0]]).flatMap(([text, speed], v) => [0, 1].map((t) => ({ i: (v * 2 + t) * 1000 + Number(k), voice: `r${k}`, text, speed }))));
   const voices: Record<string, unknown> = {};
   for (const k of Object.keys(spec)) voices[`r${k}`] = { text: refs[k].map((r) => all[r].text).join(' '), wav_base64: '', ckpt_name: ckpt };
   const fjob = { steps: Number(process.env.STEPS ?? 40), cfg: 2.0, voices, parts: fixParts };
