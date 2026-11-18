@@ -25,4 +25,10 @@ jobs:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: node --experimental-strip-types scripts/tirumala-kaggle.ts
+        run: |
+          set +e
+          node --experimental-strip-types scripts/tirumala-kaggle.ts > out.txt 2>&1
+          code=$?
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Kaggle render::$(grep -v -e Warning -e trace-warnings -e Reparsing -e 'type\": \"module' out.txt | tail -20 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
