@@ -43,7 +43,7 @@ for f in ("timing.json", "labels.json", tag + "_build.log"):
 api.sync_bucket("/out/kmeta", B + "/kaggle_meta", quiet=True)
 print("KAGGLE_RENDER_DONE", len(os.listdir("/out/" + tag)))
 `;
-const nb = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: code }], metadata: {}, nbformat: 4, nbformat_minor: 5 };
+const nb = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: code }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 };
 const pushed = await pushNotebook(auth, slug, nb as never, { gpu: true, internet: true, timeoutSeconds: 43200 });
 console.log('pushed', slug, (pushed as { url?: string }).url ?? '', JSON.stringify(env));
 for (let i = 0; i < 8; i++) {
