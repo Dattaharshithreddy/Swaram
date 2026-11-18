@@ -1,0 +1,55 @@
+name: Tirumala reel narration + render (Kaggle)
+
+# 1) Narrates the Tirumala guest-house reel on a Kaggle GPU with the owner's studio voice (same as the Puru reel),
+# 2) joins it into one file per reel line and puts it in the private HF bucket (never in this repo),
+# 3) starts the full frame render on Kaggle in two parts. Runs when render/narrate.json changes, or by hand.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [render/tirumala]
+    paths: [render/narrate.json]
+
+jobs:
+  narrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Narrate on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set +e
+          node --experimental-strip-types scripts/tirumala-narrate.ts > out.txt 2>&1; code=$?
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Narration::$(grep -v -i -e warning -e reparsing -e trace-warnings out.txt | tail -25 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
+      - name: Join lines and upload to the private bucket
+        working-directory: mobile
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install -q soundfile numpy huggingface_hub
+          python3 scripts/tirumala_assemble.py > a.txt 2>&1; code=$?
+          echo "::notice title=Lines::$(tail -16 a.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          rm -rf render-out; exit $code
+      - name: Start the full render on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          echo '{ "tag": "seq", "spp": 64, "parts": 2 }' > ../render/tirumala.json
+          set +e
+          node --experimental-strip-types scripts/tirumala-kaggle.ts > out.txt 2>&1; code=$?
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Render::$(grep -v -i -e warning -e reparsing -e trace-warnings out.txt | tail -12 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code

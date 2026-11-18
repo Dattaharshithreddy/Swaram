@@ -21,7 +21,7 @@ if (cfg.logonly) {
   console.log(lines.join('\n').split('\n').filter((l) => /rror|CYCLES|OPTIX|CUDA|Saved|Traceback|device|RENDER|GPU|frame|Fra:/i.test(l)).slice(-40).join('\n'));
   process.exit(0);
 }
-const code = `import os, subprocess, threading, time
+const mkCode = (env: Record<string, string>) => `import os, subprocess, threading, time
 os.environ["HF_TOKEN"] = ${JSON.stringify(hf)}
 CFG = ${JSON.stringify(env)}
 os.environ.update(CFG)
@@ -34,6 +34,8 @@ for sub in ("mf", "audio"):
     except Exception as e: print("sync in", sub, e)
 print(os.listdir("/out/mf"), len(os.listdir("/out/audio")))
 tag = CFG["TAG"]; os.makedirs("/out/" + tag, exist_ok=True); done = False
+try: api.sync_bucket(B + "/" + tag, "/out/" + tag, quiet=True)   # resume: frames already rendered are skipped
+except Exception as e: print("resume sync", e)
 def pusher():
     while not done:
         time.sleep(600)
@@ -50,10 +52,23 @@ for f in ("timing.json", "labels.json", tag + "_build.log"):
 api.sync_bucket("/out/kmeta", B + "/kaggle_meta", quiet=True)
 print("KAGGLE_RENDER_DONE", len(os.listdir("/out/" + tag)))
 `;
-const nb = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: code }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 };
-const pushed = await pushNotebook(auth, slug, nb as never, { gpu: true, internet: true, timeoutSeconds: 43200 });
-console.log('pushed', slug, (pushed as { url?: string }).url ?? '', JSON.stringify(env));
-for (let i = 0; i < 8; i++) {
+const mkNb = (env: Record<string, string>) => ({ cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: mkCode(env) }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 });
+async function pushWait(sl: string, book: unknown) {
+  for (let w = 0; ; w++) {   // Kaggle allows 2 GPU sessions at once; wait for a free slot (up to ~5 h)
+    try { return await pushNotebook(auth, sl, book as never, { gpu: true, internet: true, timeoutSeconds: 43200 }); }
+    catch (e) { if (!String(e).includes('GPU session count') || w > 60) throw e; console.log('Kaggle GPU slots busy, waiting 5 min'); await new Promise((r) => setTimeout(r, 300000)); }
+  }
+}
+const nParts = Number(cfg.parts ?? 1);
+for (let k = 1; k <= nParts; k++) {
+  const e2: Record<string, string> = nParts > 1 ? { ...env, START: `part${k}of${nParts}` } : env;
+  if (nParts > 1) delete e2.FRAMES;
+  const book = mkNb(e2);
+  const sl = nParts > 1 ? `${slug}-p${k}` : slug;
+  const pushed = await pushWait(sl, book);
+  console.log('pushed', sl, (pushed as { url?: string }).url ?? '', JSON.stringify(e2));
+}
+for (let i = 0; i < (nParts > 1 ? 0 : 8); i++) {
   await new Promise((r) => setTimeout(r, 30000));
   const st = await runStatus(auth, slug); console.log('status', st.raw, st.message ?? '');
   if (st.state === 'error' || st.state === 'complete') {
