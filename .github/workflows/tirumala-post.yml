@@ -8,11 +8,15 @@ on:
     branches: [render/tirumala]
     paths: [render/post.json]
 
+permissions:
+  contents: write
+
 jobs:
   post:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
+      - uses: actions/checkout@v4
       - name: Get the reel project and the rendered frames
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -39,3 +43,11 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python3 -c "import os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket('/out/final','hf://buckets/HarshithReddy05/tirumala-reel/final',quiet=True);print(os.listdir('/out/final'))"
+      - name: Hand the video to Claude (encrypted, so the voice never sits readable in this public repo)
+        run: |
+          cd /out/final && openssl rand -hex 32 > /tmp/k.txt
+          for f in tirumala_guesthouses_telugu.mp4 final_sheet.jpg; do openssl enc -aes-256-cbc -pbkdf2 -salt -in $f -out /tmp/$f.enc -pass file:/tmp/k.txt; done
+          openssl pkeyutl -encrypt -pubin -inkey $GITHUB_WORKSPACE/mobile/scripts/tirumala_pub.pem -in /tmp/k.txt -out /tmp/k.enc && rm /tmp/k.txt
+          cd $GITHUB_WORKSPACE && git config user.name "swaram-bot" && git config user.email "actions@users.noreply.github.com"
+          git checkout -q --orphan tirumala-final-tmp && git rm -rf -q . && cp /tmp/*.enc . && git add *.enc
+          git commit -q -m "encrypted final reel $(date -u +%FT%TZ)" && git push -q -f origin HEAD:tirumala-final
