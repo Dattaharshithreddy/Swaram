@@ -1,0 +1,35 @@
+name: Tirumala narration preview (encrypted)
+
+# Joins the 13 narration lines from the private HF bucket into one MP3 and publishes it ENCRYPTED (AES key wrapped
+# with scripts/tirumala_pub.pem) on the tirumala-audio branch, so only the key holder can listen. Runs on render/audio.json.
+on:
+  workflow_dispatch:
+  push:
+    branches: [render/tirumala]
+    paths: [render/audio.json]
+
+permissions:
+  contents: write
+
+jobs:
+  audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch, join, encrypt
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1
+          pip install -q -U huggingface_hub
+          python3 -c "import os;from huggingface_hub import HfApi;os.makedirs('/tmp/a',exist_ok=True);HfApi(token=os.environ['HF_TOKEN']).sync_bucket('hf://buckets/HarshithReddy05/tirumala-reel/audio','/tmp/a',quiet=True);print(sorted(os.listdir('/tmp/a')))"
+          cd /tmp/a && ls l*.wav | sort | sed "s/.*/file '&'/" > l.txt
+          ffmpeg -y -v error -f concat -safe 0 -i l.txt -af "loudnorm=I=-14:TP=-1.5" -c:a libmp3lame -b:a 192k /tmp/narr.mp3
+          openssl rand -hex 32 > /tmp/k.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in /tmp/narr.mp3 -out /tmp/narr.mp3.enc -pass file:/tmp/k.txt
+          openssl pkeyutl -encrypt -pubin -inkey $GITHUB_WORKSPACE/mobile/scripts/tirumala_pub.pem -in /tmp/k.txt -out /tmp/k.enc
+          rm /tmp/k.txt /tmp/narr.mp3
+          git config user.name "swaram-bot"; git config user.email "actions@users.noreply.github.com"
+          git checkout -q --orphan tirumala-audio-tmp && git rm -rf -q . && cp /tmp/narr.mp3.enc /tmp/k.enc . && git add narr.mp3.enc k.enc
+          git commit -q -m "encrypted narration $(date -u +%FT%TZ)" && git push -q -f origin HEAD:tirumala-audio
