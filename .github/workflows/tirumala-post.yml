@@ -35,7 +35,8 @@ jobs:
           cp /out/kaggle_meta/timing.json /out/kaggle_meta/labels.json /out/
       - name: Mix and add the Telugu overlay
         run: |
-          sed -i 's/--concurrency=8/--concurrency=4/; /^apt-get/ s/apt-get /sudo apt-get /g' /tmp/sv/reels/tirumala-stay/hf/post_job.sh
+          sed -i 's/--concurrency=8/--concurrency=4/; /^apt-get/ s/apt-get /sudo apt-get /g; s/libasound2 /libasound2t64 /' /tmp/sv/reels/tirumala-stay/hf/post_job.sh
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-core >/dev/null 2>&1; pip install -q numpy; ffmpeg -version | head -1
           bash /tmp/sv/reels/tirumala-stay/hf/post_job.sh > post.txt 2>&1; code=$?
           echo "::notice title=Finish::$(grep -v '^+' post.txt | tail -15 | tr '\n' '\r' | sed 's/\r/%0A/g')"
           exit $code
