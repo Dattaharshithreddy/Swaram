@@ -1,0 +1,54 @@
+name: Tirumala narration fix (word timings + cut)
+
+# Swaram voice tooling: finds word timings in one narration line (faster-whisper) and, when render/voicefix.json gives a
+# cut, removes that span from the line, keeps the line's length (pads the end) and puts it back in the private bucket.
+# Only word timings are printed; the voice itself never leaves the bucket.
+on:
+  push:
+    branches: [render/tirumala]
+    paths: [render/voicefix.json]
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Word timings and cut
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sudo apt-get update -qq >/dev/null 2>&1; sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1
+          pip install -q -U huggingface_hub faster-whisper soundfile numpy
+          python3 - > out.txt 2>&1 <<'PY'
+          import json, os, numpy as np, soundfile as sf
+          from huggingface_hub import HfApi
+          c = json.load(open('render/voicefix.json')); line = c['line']; B = 'hf://buckets/HarshithReddy05/tirumala-reel'
+          api = HfApi(token=os.environ['HF_TOKEN']); os.makedirs('/tmp/a', exist_ok=True)
+          api.sync_bucket(f'{B}/audio', '/tmp/a', include=[f'{line}.wav', f'{line}_orig.wav'], quiet=True)
+          src = f'/tmp/a/{line}_orig.wav' if os.path.exists(f'/tmp/a/{line}_orig.wav') else f'/tmp/a/{line}.wav'
+          a, sr = sf.read(src, dtype='float32'); print('line', line, 'len', round(len(a) / sr, 3), 'sr', sr, 'from', os.path.basename(src))
+          from faster_whisper import WhisperModel
+          m = WhisperModel(c.get('model', 'medium'), device='cpu', compute_type='int8')
+          segs, _ = m.transcribe(src, language='te', word_timestamps=True, beam_size=5)
+          for s in segs:
+              for w in s.words: print(f'W {w.start:6.2f} {w.end:6.2f} {w.word}')
+          if 'cut' in c:
+              t0, t1 = c['cut']; gap = c.get('gap', 0.35)
+              i0, i1 = int(t0 * sr), int(t1 * sr); f = int(0.012 * sr)
+              head, tail = a[:i0].copy(), a[i1:].copy()
+              head[-f:] *= np.linspace(1, 0, f); tail[:f] *= np.linspace(0, 1, f)
+              out = np.concatenate([head, np.zeros(int(gap * sr), np.float32), tail])
+              out = np.concatenate([out, np.zeros(max(0, len(a) - len(out)), np.float32)])[:len(a)]
+              os.makedirs('/tmp/up', exist_ok=True)
+              sf.write(f'/tmp/up/{line}.wav', out, sr, subtype='PCM_16')
+              if src.endswith(f'{line}.wav') and not src.endswith('_orig.wav'): sf.write(f'/tmp/up/{line}_orig.wav', a, sr, subtype='PCM_16')
+              api.sync_bucket('/tmp/up', f'{B}/audio', quiet=True)
+              print('CUT', t0, t1, 'gap', gap, 'uploaded', os.listdir('/tmp/up'))
+              segs, _ = m.transcribe(f'/tmp/up/{line}.wav', language='te', word_timestamps=True, beam_size=5)
+              for s in segs:
+                  for w in s.words: print(f'N {w.start:6.2f} {w.end:6.2f} {w.word}')
+          PY
+          code=$?
+          echo "::notice title=Voicefix::$(tail -60 out.txt | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
