@@ -31,9 +31,13 @@ jobs:
           a, sr = sf.read(src, dtype='float32'); print('line', line, 'len', round(len(a) / sr, 3), 'sr', sr, 'from', os.path.basename(src))
           from faster_whisper import WhisperModel
           import subprocess
-          def a16(path): return np.frombuffer(subprocess.run(['ffmpeg', '-v', 'error', '-i', path, '-ac', '1', '-ar', '16000', '-f', 'f32le', '-'], capture_output=True).stdout, np.float32)
+          def a16(path):
+              x, r = sf.read(path, dtype='float32')
+              if x.ndim > 1: x = x.mean(1)
+              n = int(len(x) * 16000 / r); y = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
+              print('audio16k', len(y), float(np.abs(y).max())); return y
           m = WhisperModel(c.get('model', 'medium'), device='cpu', compute_type='int8')
-          segs, _ = m.transcribe(a16(src), language='te', word_timestamps=True, beam_size=5)
+          segs, _ = m.transcribe(a16(src), language='te', word_timestamps=True, beam_size=5, vad_filter=False)
           for s in segs:
               for w in s.words: print(f'W {w.start:6.2f} {w.end:6.2f} {w.word}')
           if 'cut' in c:
@@ -48,7 +52,7 @@ jobs:
               if src.endswith(f'{line}.wav') and not src.endswith('_orig.wav'): sf.write(f'/tmp/up/{line}_orig.wav', a, sr, subtype='PCM_16')
               api.sync_bucket('/tmp/up', f'{B}/audio', quiet=True)
               print('CUT', t0, t1, 'gap', gap, 'uploaded', os.listdir('/tmp/up'))
-              segs, _ = m.transcribe(a16(f'/tmp/up/{line}.wav'), language='te', word_timestamps=True, beam_size=5)
+              segs, _ = m.transcribe(a16(f'/tmp/up/{line}.wav'), language='te', word_timestamps=True, beam_size=5, vad_filter=False)
               for s in segs:
                   for w in s.words: print(f'N {w.start:6.2f} {w.end:6.2f} {w.word}')
           PY
