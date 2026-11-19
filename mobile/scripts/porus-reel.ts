@@ -40,6 +40,14 @@ if (process.env.FETCH_ONLY !== '1') {
   await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 43200 });
   console.log('pushed', slug);
 }
+if (process.env.STATUS_ONLY === '1') {
+  const st = await runStatus(auth, slug); console.log('KAGGLE STATE', JSON.stringify(st));
+  const o = await runOutputs(auth, slug).catch((e) => ({ log: String(e), files: [] as { fileName: string; url: string }[] }));
+  const ls = (o.log ?? '').split('\n').map((l) => { try { return (JSON.parse(l.replace(/^,/, '')) as { data: string }).data; } catch { return ''; } }).join('').split('\n');
+  console.log(ls.filter((l) => /==|shot |REEL_DONE|rror|Traceback|GPUs|^\$|Fra:|Rendered/.test(l)).slice(-40).join('\n'));
+  console.log('files', o.files.map((f) => f.fileName).join(', '));
+  process.exit(0);
+}
 let state = '';
 for (let i = 0; i < 1000; i++) {                       // the workflow's own time limit ends this if Kaggle takes longer
   const s = await runStatus(auth, slug); state = s.state;
