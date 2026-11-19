@@ -6,6 +6,10 @@ name: Puru reel full render (Kaggle)
 on:
   workflow_dispatch:
     inputs:
+      status_only:
+        description: '1 = only print the Kaggle run state'
+        required: false
+        default: '0'
       fetch_only:
         description: '1 = do not start a new render, only collect the last one'
         required: false
@@ -30,8 +34,10 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           FETCH_ONLY: ${{ inputs.fetch_only }}
-        run: node --experimental-strip-types scripts/porus-reel.ts 2>&1 | grep -v -i warning; exit ${PIPESTATUS[0]}
+          STATUS_ONLY: ${{ inputs.status_only }}
+        run: node --experimental-strip-types scripts/porus-reel.ts 2>&1 | grep --line-buffered -v -i warning; exit ${PIPESTATUS[0]}
       - name: Encrypt and publish
+        if: inputs.status_only != '1'
         working-directory: mobile/render-out
         run: |
           openssl rand -hex 32 > k.txt
