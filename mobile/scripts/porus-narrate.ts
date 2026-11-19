@@ -136,10 +136,19 @@ if (process.env.MOODS === '1') {
   parts = mparts.map((p) => ({ ...p, para: all[p.i].para, mood: all[p.i].mood }));
 }
 
+// Whisper check of every sentence (as in the narration guide's checklist)
+if (process.env.CHECK === '1' && process.env.FIX !== '1' && process.env.MOODS !== '1') nb.cells.push({ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source:
+`import glob, torch\nfrom transformers import pipeline\n_p = pipeline('automatic-speech-recognition', model='openai/whisper-large-v3', torch_dtype=torch.float16, device=0)\n` +
+`for _f in sorted(glob.glob('/tmp/render/out/parts/*.wav')):\n    _t = _p(_f, generate_kwargs={'language': 'telugu', 'task': 'transcribe'})['text']\n    print('###CHK ' + _f.split('/')[-1] + ' ' + _t.strip())` });
+
 // 3. run it
 const slug = 'swaram-porus-narration';
 const t0 = Date.now();
-const pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN], datasetSources: datasets.map((d) => d.split('/').pop()!) });
+let pushed: { url?: string } = {};
+for (let w = 0; ; w++) {   // Kaggle allows 2 GPU sessions at once; wait for a free slot (up to ~4 h)
+  try { pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN], datasetSources: datasets.map((d) => d.split('/').pop()!) }); break; }
+  catch (e) { if (!String(e).includes('GPU session count') || w > 48) throw e; console.log('Kaggle GPU slots busy, waiting 5 min'); await new Promise((r) => setTimeout(r, 300000)); }
+}
 console.log('pushed', pushed.url ?? slug, parts.length, 'sentences');
 let state = '';
 for (let i = 0; i < 260; i++) {
