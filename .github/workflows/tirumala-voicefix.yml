@@ -36,10 +36,16 @@ jobs:
               if x.ndim > 1: x = x.mean(1)
               n = int(len(x) * 16000 / r); y = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
               print('audio16k', len(y), float(np.abs(y).max())); return y
-          m = WhisperModel(c.get('model', 'medium'), device='cpu', compute_type='int8')
-          segs, _ = m.transcribe(a16(src), language='te', word_timestamps=True, beam_size=5, vad_filter=False)
-          for s in segs:
-              for w in s.words: print(f'W {w.start:6.2f} {w.end:6.2f} {w.word}')
+          x16 = a16(src)
+          for mn in c.get('models', ['large-v3']):
+              m = WhisperModel(mn, device='cpu', compute_type='int8')
+              for lang in ('te', None):
+                  segs, info = m.transcribe(x16, language=lang, word_timestamps=True, beam_size=5, vad_filter=False, condition_on_previous_text=False)
+                  segs = list(segs); print('MODEL', mn, 'lang', lang, info.language, 'segs', len(segs))
+                  for s in segs:
+                      print('S', round(s.start, 2), round(s.end, 2), s.text)
+                      for w in (s.words or []): print(f'W {w.start:6.2f} {w.end:6.2f} {w.word}')
+                  if segs: break
           if 'cut' in c:
               t0, t1 = c['cut']; gap = c.get('gap', 0.35)
               i0, i1 = int(t0 * sr), int(t1 * sr); f = int(0.012 * sr)
