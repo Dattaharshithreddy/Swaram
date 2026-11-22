@@ -28,12 +28,12 @@ if (cfg.forge) {   // Model Forge asset factory: { forge: { jobs: "reels/varaha/
   const code = `import os, subprocess, threading, time
 os.environ["HF_TOKEN"] = ${JSON.stringify(hf)}
 os.environ["IMAGE_MODEL"] = ${JSON.stringify(f.model ?? 'RunDiffusion/Juggernaut-XL-v9')}
-subprocess.run("python -m venv /w/hfenv && /w/hfenv/bin/pip -q install huggingface_hub", shell=True)
+subprocess.run("pip -q install --target /w/hfpkgs huggingface_hub", shell=True)
 D = "hf://buckets/HarshithReddy05/tirumala-reel/" + ${JSON.stringify(f.dest)}; OUT = "/kaggle/working/forge"
 os.makedirs(OUT, exist_ok=True); done = False
 def sync(src, dst, t=600):
-    r = subprocess.run(["/w/hfenv/bin/python", "-c", "import sys,os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket(sys.argv[1], sys.argv[2], quiet=True)", src, dst], capture_output=True, text=True, timeout=t)
-    if r.returncode: print("sync fail", r.stderr[-300:], flush=True)
+    r = subprocess.run(["python", "-c", "import sys,os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket(sys.argv[1], sys.argv[2], quiet=True)", src, dst], capture_output=True, text=True, timeout=t, env=dict(os.environ, PYTHONPATH="/w/hfpkgs"))
+    if r.returncode: print("sync fail", r.stderr[-1200:].replace(chr(10), " | "), flush=True)
 try: sync(D, OUT, 180)
 except Exception as e: print("resume", e)
 try: sync("hf://buckets/HarshithReddy05/tirumala-reel/keys", "/w/keys", 60)
