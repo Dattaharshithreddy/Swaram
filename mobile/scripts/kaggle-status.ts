@@ -36,9 +36,9 @@ for (const k of data.kernels ?? []) {
     const ls = (o.log ?? '').split('\n').map((l) => { try { return (JSON.parse(l.replace(/^,/, '')) as { data: string }).data.trimEnd(); } catch { return ''; } }).filter(Boolean);
     console.log(`--- ${slug} ---\n${ls.filter((l) => /done, |clips|precision|Error|silent|Mode:|Reference|GPU|step|\$ /.test(l)).slice(-40).join('\n')}`);
   }
-  if (s.state === 'complete') {
+  if (s.state === 'complete' || s.state === 'unknown') {
     const out = await runOutputs(auth, slug).catch(() => ({ files: [] as { fileName: string }[] }));
     files = out.files.map((f) => f.fileName).filter((n) => /zip|safetensors|json|wav/.test(n)).slice(0, 6).join(', ');
   }
-  console.log(`${slug} | last run ${k.lastRunTime ?? '?'} | ${s.state}${files ? ` | ${files}` : ''}`);
+  console.log(`${slug} | last run ${k.lastRunTime ?? '?'} | ${s.state} raw=${(s as { raw?: string }).raw ?? ''} ${(s as { message?: string }).message ?? ''}${files ? ` | ${files}` : ''}`);
 }
