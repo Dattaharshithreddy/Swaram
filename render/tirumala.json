@@ -1,1 +1,1 @@
-{ "forge": { "jobs": "reels/varaha/forge/jobs1.json", "dest": "varaha/forge" }, "slug": "varaha-forge-1", "v": 5 }
+{ "forge": { "jobs": "reels/varaha/forge/jobs2.json", "dest": "varaha/forge2" }, "slug": "varaha-forge-2", "v": 6 }

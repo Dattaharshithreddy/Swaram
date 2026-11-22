@@ -36,6 +36,8 @@ def sync(src, dst, t=600):
     if r.returncode: print("sync fail", r.stderr[-300:], flush=True)
 try: sync(D, OUT, 180)
 except Exception as e: print("resume", e)
+try: sync("hf://buckets/HarshithReddy05/tirumala-reel/keys", "/w/keys", 60)
+except Exception as e: print("keys", e)
 print("have", os.listdir(OUT), flush=True)
 def pusher():
     while not done:
