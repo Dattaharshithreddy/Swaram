@@ -1,1 +1,1 @@
-{ "logonly": true, "slug": "varaha-forge-1", "grep": "sync|have|Traceback|server|CUDA|memory|Killed", "lines": 30, "v": 9 }
+{ "fetch": "forge/.*\\.png$", "slug": "varaha-forge-1", "v": 10 }

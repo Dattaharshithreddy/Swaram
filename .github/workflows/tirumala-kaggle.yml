@@ -10,6 +10,9 @@ on:
     branches: [render/tirumala]
     paths: [render/tirumala.json]
 
+permissions:
+  contents: write
+
 jobs:
   render:
     runs-on: ubuntu-latest
@@ -32,3 +35,13 @@ jobs:
           level=notice; [ $code -ne 0 ] && level=error
           echo "::$level title=Kaggle render::$(grep -v -e Warning -e trace-warnings -e Reparsing -e 'type\": \"module' out.txt | tail -20 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
           exit $code
+      - name: Encrypted hand-off of fetched files (key from the private bucket)
+        if: hashFiles('mobile/render-out/fetch/**') != ''
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install -q huggingface_hub
+          python3 -c "from huggingface_hub import HfApi;HfApi().sync_bucket('hf://buckets/HarshithReddy05/tirumala-reel/keys','/tmp/keys',quiet=True)"
+          cd mobile/render-out && tar czf /tmp/fetch.tgz fetch && openssl enc -aes-256-cbc -pbkdf2 -salt -in /tmp/fetch.tgz -out /tmp/fetch.tgz.enc -pass file:/tmp/keys/asset.key && rm -rf /tmp/keys
+          cd $GITHUB_WORKSPACE && git config user.name swaram-bot && git config user.email actions@users.noreply.github.com
+          git checkout -q --orphan fetch-tmp && git rm -rf -q . && cp /tmp/fetch.tgz.enc . && git add fetch.tgz.enc && git commit -q -m "encrypted fetch" && git push -q -f origin HEAD:kaggle-fetch

@@ -60,6 +60,13 @@ print("FORGE_DONE", sorted(os.listdir(OUT)))
   }
   process.exit(0);
 }
+if (cfg.fetch) {   // { fetch: "regex", slug } : download matching Kaggle output files to render-out/fetch
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const o = await runOutputs(auth, slug); const re = new RegExp(cfg.fetch); mkdirSync('render-out/fetch', { recursive: true }); let n = 0;
+  for (const f of o.files) { const name = f.fileName.split('/').pop() ?? ''; if (!re.test(f.fileName)) continue;
+    const r = await fetch(f.url); if (!r.ok) { console.log('fail', f.fileName, r.status); continue; } writeFileSync('render-out/fetch/' + name, Buffer.from(await r.arrayBuffer())); n++; }
+  console.log('fetched', n, 'of', o.files.length, 'files'); process.exit(0);
+}
 if (cfg.logonly) {
   const st = await runStatus(auth, slug); console.log('status', st.raw);
   const o = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
