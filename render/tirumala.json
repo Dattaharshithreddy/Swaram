@@ -1,1 +1,1 @@
-{ "gputest": true, "v": 2 }
+{ "forge": { "jobs": "reels/varaha/forge/jobs1.json", "dest": "varaha/forge" }, "slug": "varaha-forge-1", "v": 1 }

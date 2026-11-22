@@ -22,6 +22,38 @@ if (cfg.gputest) {
   try { for (const l of JSON.parse(String(o.log ?? ''))) console.log(String(l.data ?? '').trimEnd()); } catch { console.log(String(o.log ?? '').slice(-1500)); }
   process.exit(0);
 }
+if (cfg.forge) {   // Model Forge asset factory: { forge: { jobs: "reels/varaha/forge/jobs1.json", dest: "varaha/forge", model?: "<sdxl id>" } }
+  const f = cfg.forge; const sl = cfg.slug ?? 'reel-forge';
+  const code = `import os, subprocess, threading, time
+os.environ["HF_TOKEN"] = ${JSON.stringify(hf)}
+os.environ["IMAGE_MODEL"] = ${JSON.stringify(f.model ?? 'RunDiffusion/Juggernaut-XL-v9')}
+subprocess.run("pip -q install -U huggingface_hub", shell=True)
+from huggingface_hub import HfApi
+api = HfApi(token=os.environ["HF_TOKEN"]); D = "hf://buckets/HarshithReddy05/tirumala-reel/" + ${JSON.stringify(f.dest)}
+os.makedirs("/out/forge", exist_ok=True); done = False
+def _resume():
+    try: api.sync_bucket(D, "/out/forge", quiet=True)
+    except Exception as e: print("resume", e)
+_t = threading.Thread(target=_resume, daemon=True); _t.start(); _t.join(120)
+print("have", os.listdir("/out/forge"), flush=True)
+def pusher():
+    while not done:
+        time.sleep(150)
+        try: api.sync_bucket("/out/forge", D, quiet=True)
+        except Exception as e: print("sync", e, flush=True)
+threading.Thread(target=pusher, daemon=True).start()
+subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && JOBS=/w/sv/${f.jobs} OUT=/out/forge bash /w/sv/tools/forge/forge_job.sh 2>&1 | grep --line-buffered -v -E '^\\\\+|it/s\\\\]' | tail -c 20000", shell=True)
+done = True
+api.sync_bucket("/out/forge", D, quiet=True)
+print("FORGE_DONE", sorted(os.listdir("/out/forge")))
+`;
+  const nb = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: code }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 };
+  for (let w = 0; ; w++) {
+    try { console.log('push', JSON.stringify(await pushNotebook(auth, sl, nb as never, { gpu: true, internet: true, timeoutSeconds: 43200 }))); break; }
+    catch (e) { if (!String(e).includes('GPU session count') || w > 60) throw e; console.log('GPU slots busy, waiting 5 min'); await new Promise((r) => setTimeout(r, 300000)); }
+  }
+  process.exit(0);
+}
 if (cfg.logonly) {
   const st = await runStatus(auth, slug); console.log('status', st.raw);
   const o = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
