@@ -45,7 +45,7 @@ const MOODS: Record<string, string> = { sad: 'sad', anger: 'angry', fear: 'fearf
 const job = {
   steps: Number(process.env.STEPS ?? 40), cfg: 2.0,
   voices: { datta: { text: refText, wav_base64: bytesToBase64(refWav), ckpt_name: ckpt } },   // reference filled in on Kaggle
-  parts: parts.map((p) => ({ i: p.i, voice: 'datta', text: p.text, speed: p.speed })),
+  parts: parts.map((p) => ({ i: p.i, voice: 'datta', text: (p as { tts?: string }).tts ?? p.text, speed: p.speed })),
 };
 const nb = JSON.parse(readFileSync('../cloud/swaram_render.ipynb', 'utf-8'));
 nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_count: null,
@@ -76,7 +76,7 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 `    _ws = []\n    for _x in _sel:\n        _w, _ = _lr.load(_x[1], sr=24000, mono=True); _w, _ = _lr.effects.trim(_w, top_db=35); _ws += [_w, _gap]\n` +
 `    _sf.write(f'/kaggle/working/ref_{_e}.wav', _np.concatenate(_ws[:-1]), 24000)\n` +
 `    APP_RENDER['voices']['datta_' + _e] = dict(APP_RENDER['voices']['datta'], text=' '.join(_x[2] for _x in _sel), wav_base64=base64.b64encode(open(f'/kaggle/working/ref_{_e}.wav', 'rb').read()).decode())\n` +
-`for _p in APP_RENDER['parts']:\n    _e = _MOODS.get(_LINE_MOOD.get(str(_p['i'])) or _LINE_MOOD.get(_p['i'], ''))\n    if _e and ('datta_' + _e) in APP_RENDER['voices']: _p['voice'] = 'datta_' + _e; _p['speed'] = 1.0\n` +
+`for _p in APP_RENDER['parts']:\n    _e = _MOODS.get(_LINE_MOOD.get(str(_p['i'])) or _LINE_MOOD.get(_p['i'], ''))\n    if _e and ('datta_' + _e) in APP_RENDER['voices']: _p['voice'] = 'datta_' + _e; _p['speed'] = ${process.env.SPEED_MOOD ?? '1.0'}\n` +
 `print('lines with a mood clip:', sum(_p['voice'] != 'datta' for _p in APP_RENDER['parts']), 'of', len(APP_RENDER['parts']))` });
 
 // 3. run it
