@@ -1,1 +1,1 @@
-{ "forge": { "jobs": "reels/varaha/forge/jobs3.json", "dest": "varaha/forge2" }, "slug": "varaha-forge-3", "v": 19 }
+{ "fetch": "forge/.*_3d\\.glb$", "slug": "varaha-forge-3", "v": 20 }
