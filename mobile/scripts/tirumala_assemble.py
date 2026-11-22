@@ -13,7 +13,7 @@ MAXP = float(os.environ.get('MAX_PAUSE', 0))   # >0: any pause inside a sentence
 def squeeze(a):
     if MAXP <= 0: return a
     w = int(0.02 * SR); n = len(a) // w; e = np.array([np.sqrt(np.mean(a[i * w:(i + 1) * w] ** 2)) for i in range(n)])
-    quiet = e < max(1e-4, 10 ** (-40 / 20) * e.max()); out, i, f = [], 0, int(0.012 * SR); ramp = np.linspace(1, 0, f, dtype=np.float32)
+    quiet = e < max(1e-4, 10 ** (-30 / 20) * e.max()); out, i, f = [], 0, int(0.012 * SR); ramp = np.linspace(1, 0, f, dtype=np.float32)
     lead = next((k for k in range(n) if not quiet[k]), 0); trail = next((k for k in range(n - 1, -1, -1) if not quiet[k]), n - 1)
     k = lead; seg_start = lead * w
     while k <= trail:
