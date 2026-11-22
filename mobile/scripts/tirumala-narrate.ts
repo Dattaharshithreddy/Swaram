@@ -84,12 +84,12 @@ const slug = `swaram-${process.env.REEL ?? 'tirumala'}-narration`;
 const t0 = Date.now();
 let pushed: { url?: string } = {};
 for (let w = 0; !process.env.FETCH_ONLY; w++) {   // Kaggle allows 2 GPU sessions at once; wait for a free slot (up to ~4 h)
-  try { pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN], datasetSources: datasets.map((d) => d.split('/').pop()!) }); break; }
+  try { pushed = await pushNotebook(auth, slug, nb, { gpu: process.env.GPU !== '0', internet: true, timeoutSeconds: process.env.GPU === '0' ? 30000 : 5400, kernelSources: [TRAIN], datasetSources: datasets.map((d) => d.split('/').pop()!) }); break; }
   catch (e) { if (!String(e).includes('GPU session count') || w > 48) throw e; console.log('Kaggle GPU slots busy, waiting 5 min'); await new Promise((r) => setTimeout(r, 300000)); }
 }
 console.log('pushed', pushed.url ?? slug, parts.length, 'sentences');
 let state = '';
-for (let i = 0; i < 260; i++) {
+for (let i = 0; i < (process.env.GPU === '0' ? 1000 : 260); i++) {
   await new Promise((r) => setTimeout(r, 20000));
   const s = await runStatus(auth, slug); state = s.state;
   if (i % 3 === 0) console.log(`${Math.round((Date.now() - t0) / 60000)} min`, s.state, s.message ?? '');
