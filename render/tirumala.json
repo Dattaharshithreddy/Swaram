@@ -1,1 +1,1 @@
-{ "forge": { "jobs": "reels/varaha/forge/jobs2.json", "dest": "varaha/forge2" }, "slug": "varaha-forge-2", "v": 13 }
+{ "logonly": true, "slug": "varaha-forge-2", "grep": "done|SKIP|FAIL|ERROR|have|sync fail|FORGE", "lines": 30, "v": 14 }
