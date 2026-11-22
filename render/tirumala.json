@@ -1,1 +1,1 @@
-{ "fetch": "_logs/.*|forge_run.log", "slug": "varaha-forge-1", "v": 11 }
+{ "fetch": "forge/.*\\.(png|glb)$|_logs/client.log", "slug": "varaha-forge-2", "v": 12 }
