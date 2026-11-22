@@ -24,28 +24,30 @@ if (cfg.gputest) {
 }
 if (cfg.forge) {   // Model Forge asset factory: { forge: { jobs: "reels/varaha/forge/jobs1.json", dest: "varaha/forge", model?: "<sdxl id>" } }
   const f = cfg.forge; const sl = cfg.slug ?? 'reel-forge';
+  // Uploads run from their own venv: Model Forge's setup reinstalls huggingface_hub, which broke in-process syncs.
   const code = `import os, subprocess, threading, time
 os.environ["HF_TOKEN"] = ${JSON.stringify(hf)}
 os.environ["IMAGE_MODEL"] = ${JSON.stringify(f.model ?? 'RunDiffusion/Juggernaut-XL-v9')}
-subprocess.run("pip -q install -U huggingface_hub", shell=True)
-from huggingface_hub import HfApi
-api = HfApi(token=os.environ["HF_TOKEN"]); D = "hf://buckets/HarshithReddy05/tirumala-reel/" + ${JSON.stringify(f.dest)}
-os.makedirs("/out/forge", exist_ok=True); done = False
-def _resume():
-    try: api.sync_bucket(D, "/out/forge", quiet=True)
-    except Exception as e: print("resume", e)
-_t = threading.Thread(target=_resume, daemon=True); _t.start(); _t.join(120)
-print("have", os.listdir("/out/forge"), flush=True)
+subprocess.run("python -m venv /w/hfenv && /w/hfenv/bin/pip -q install huggingface_hub", shell=True)
+D = "hf://buckets/HarshithReddy05/tirumala-reel/" + ${JSON.stringify(f.dest)}; OUT = "/kaggle/working/forge"
+os.makedirs(OUT, exist_ok=True); done = False
+def sync(src, dst, t=600):
+    r = subprocess.run(["/w/hfenv/bin/python", "-c", "import sys,os;from huggingface_hub import HfApi;HfApi(token=os.environ['HF_TOKEN']).sync_bucket(sys.argv[1], sys.argv[2], quiet=True)", src, dst], capture_output=True, text=True, timeout=t)
+    if r.returncode: print("sync fail", r.stderr[-300:], flush=True)
+try: sync(D, OUT, 180)
+except Exception as e: print("resume", e)
+print("have", os.listdir(OUT), flush=True)
 def pusher():
     while not done:
         time.sleep(150)
-        try: api.sync_bucket("/out/forge", D, quiet=True)
+        try: sync(OUT, D)
         except Exception as e: print("sync", e, flush=True)
 threading.Thread(target=pusher, daemon=True).start()
-subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && JOBS=/w/sv/${f.jobs} OUT=/out/forge bash /w/sv/tools/forge/forge_job.sh 2>&1 | grep --line-buffered -v -E '^\\\\+|it/s\\\\]' | tail -c 20000", shell=True)
+subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && JOBS=/w/sv/${f.jobs} OUT=" + OUT + " bash /w/sv/tools/forge/forge_job.sh > /kaggle/working/forge_run.log 2>&1", shell=True)
 done = True
-api.sync_bucket("/out/forge", D, quiet=True)
-print("FORGE_DONE", sorted(os.listdir("/out/forge")))
+sync(OUT, D)
+print(open(OUT + "/_logs/client.log").read()[-4000:] if os.path.exists(OUT + "/_logs/client.log") else open("/kaggle/working/forge_run.log").read()[-4000:])
+print("FORGE_DONE", sorted(os.listdir(OUT)))
 `;
   const nb = { cells: [{ cell_type: 'code', metadata: {}, outputs: [], execution_count: null, source: code }], metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, nbformat: 4, nbformat_minor: 5 };
   for (let w = 0; ; w++) {
@@ -58,7 +60,7 @@ if (cfg.logonly) {
   const st = await runStatus(auth, slug); console.log('status', st.raw);
   const o = await runOutputs(auth, slug).catch((e) => ({ files: [], log: String(e) }));
   const lines: string[] = []; try { for (const l of JSON.parse(String(o.log ?? ''))) lines.push(String(l.data ?? '').trimEnd()); } catch { lines.push(String(o.log ?? '')); }
-  console.log(lines.join('\n').split('\n').filter((l) => !/pip's dependency|Debugger|frozen|PYDEVD|Debugging/.test(l)).slice(-45).join('\n'));
+  console.log(lines.join('\n').split('\n').filter((l) => !/pip's dependency|Debugger|frozen|PYDEVD|Debugging/.test(l)).filter((l) => !cfg.grep || new RegExp(cfg.grep).test(l)).slice(-(cfg.lines ?? 45)).join('\n'));
   process.exit(0);
 }
 const mkCode = (env: Record<string, string>) => `import os, subprocess, threading, time

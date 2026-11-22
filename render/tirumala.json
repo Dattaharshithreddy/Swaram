@@ -1,1 +1,1 @@
-{ "logonly": true, "slug": "varaha-forge-1", "v": 4 }
+{ "forge": { "jobs": "reels/varaha/forge/jobs1.json", "dest": "varaha/forge" }, "slug": "varaha-forge-1", "v": 5 }
