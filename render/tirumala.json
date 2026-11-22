@@ -1,1 +1,1 @@
-{ "logonly": true, "slug": "varaha-forge-1", "grep": "sync|done|FAIL|ERROR|have|Traceback|setup|FORGE|Error", "lines": 60, "v": 8 }
+{ "logonly": true, "slug": "varaha-forge-1", "grep": "sync|have|Traceback|server|CUDA|memory|Killed", "lines": 30, "v": 9 }
