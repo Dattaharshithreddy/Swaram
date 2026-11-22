@@ -38,16 +38,14 @@ try: sync(D, OUT, 180)
 except Exception as e: print("resume", e)
 try: sync("hf://buckets/HarshithReddy05/tirumala-reel/keys", "/w/keys", 60)
 except Exception as e: print("keys", e)
-try: sync("hf://buckets/HarshithReddy05/tirumala-reel/keys", "/w/keys", 60)
-except Exception as e: print("keys", e)
-print("have", os.listdir(OUT), flush=True)
+print("have", os.listdir(OUT), "keys:", os.path.exists("/w/keys/asset.key"), flush=True)
 def pusher():
     while not done:
         time.sleep(150)
         try: sync(OUT, D)
         except Exception as e: print("sync", e, flush=True)
 threading.Thread(target=pusher, daemon=True).start()
-subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && JOBS=/w/sv/${f.jobs} OUT=" + OUT + " bash /w/sv/tools/forge/forge_job.sh > /kaggle/working/forge_run.log 2>&1", shell=True)
+subprocess.run("git clone -q --depth 1 -b reels/follow-the-sugar https://github.com/Dattaharshithreddy/skillvideo /w/sv && JOBS=/w/sv/${f.jobs} OUT=" + OUT + " KEYFILE=/w/keys/asset.key bash /w/sv/tools/forge/forge_job.sh > /kaggle/working/forge_run.log 2>&1", shell=True)
 done = True
 sync(OUT, D)
 print(open(OUT + "/_logs/client.log").read()[-4000:] if os.path.exists(OUT + "/_logs/client.log") else open("/kaggle/working/forge_run.log").read()[-4000:])
