@@ -1,0 +1,61 @@
+name: Reel narration (Kaggle, studio voice)
+
+# Narrates any reel from mobile/scripts/<reel>_parts.json with the owner's studio voice on Kaggle, joins one file per
+# paragraph (l01.wav …) into the private HF bucket, and leaves an ENCRYPTED preview MP3 on branch <reel>-audio
+# (key: mobile/scripts/tirumala_pub.pem). Settings in render/narrate_reel.json: { "reel": "varaha", "dest": "hf://buckets/…/audio" }.
+on:
+  push:
+    branches: [render/tirumala]
+    paths: [render/narrate_reel.json]
+
+permissions:
+  contents: write
+
+jobs:
+  narrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Settings
+        id: cfg
+        run: |
+          echo "reel=$(python3 -c "import json;print(json.load(open('render/narrate_reel.json'))['reel'])")" >> $GITHUB_OUTPUT
+          echo "dest=$(python3 -c "import json;print(json.load(open('render/narrate_reel.json'))['dest'])")" >> $GITHUB_OUTPUT
+      - name: Narrate on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          REEL: ${{ steps.cfg.outputs.reel }}
+        run: |
+          set +e
+          node --experimental-strip-types scripts/tirumala-narrate.ts > out.txt 2>&1; code=$?
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Narration::$(grep -v -i -e warning -e reparsing -e trace-warnings out.txt | tail -25 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
+      - name: Join lines, upload, encrypted preview
+        working-directory: mobile
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          REEL: ${{ steps.cfg.outputs.reel }}
+          AUDIO_DEST: ${{ steps.cfg.outputs.dest }}
+        run: |
+          set -e
+          sudo apt-get update -qq >/dev/null 2>&1; sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1
+          pip install -q soundfile numpy huggingface_hub
+          python3 scripts/tirumala_assemble.py > a.txt 2>&1 || { echo "::error title=Lines::$(tail -15 a.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"; exit 1; }
+          echo "::notice title=Lines::$(tail -16 a.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          cd render-out/lines && ls l*.wav | sort | sed "s/.*/file '&'/" > l.txt
+          ffmpeg -y -v error -f concat -safe 0 -i l.txt -af "loudnorm=I=-14:TP=-1.5" -c:a libmp3lame -b:a 192k /tmp/narr.mp3
+          openssl rand -hex 32 > /tmp/k.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in /tmp/narr.mp3 -out /tmp/narr.mp3.enc -pass file:/tmp/k.txt
+          openssl pkeyutl -encrypt -pubin -inkey $GITHUB_WORKSPACE/mobile/scripts/tirumala_pub.pem -in /tmp/k.txt -out /tmp/k.enc
+          rm -f /tmp/k.txt /tmp/narr.mp3; cd $GITHUB_WORKSPACE/mobile && rm -rf render-out
+          cd $GITHUB_WORKSPACE && git config user.name "swaram-bot" && git config user.email "actions@users.noreply.github.com"
+          git checkout -q --orphan preview-tmp && git rm -rf -q . && cp /tmp/narr.mp3.enc /tmp/k.enc . && git add narr.mp3.enc k.enc
+          git commit -q -m "encrypted narration ${{ steps.cfg.outputs.reel }}" && git push -q -f origin HEAD:${{ steps.cfg.outputs.reel }}-audio

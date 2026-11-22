@@ -3,7 +3,7 @@ sentence wavs, to the private HF bucket the render reads from. The voice never g
 import glob, json, os, re, sys
 import numpy as np, soundfile as sf
 from huggingface_hub import HfApi
-parts = json.load(open('scripts/tirumala_parts.json', encoding='utf-8'))
+parts = json.load(open(f"scripts/{os.environ.get('REEL', 'tirumala')}_parts.json", encoding='utf-8'))
 wav = {int(re.findall(r'\d+', os.path.basename(f))[-1]): f for f in glob.glob('render-out/narr/**/*.wav', recursive=True)}
 missing = [p['i'] for p in parts if p['i'] not in wav]
 if missing: sys.exit(f'missing sentences {missing}')
@@ -19,5 +19,5 @@ for para in sorted({p['para'] for p in parts}):
     sf.write(f'render-out/lines/l{para + 1:02d}.wav', out, SR, subtype='PCM_16')
     print(f'l{para + 1:02d}', round(len(out) / SR, 2), 's')
 api = HfApi(token=os.environ['HF_TOKEN'])
-api.sync_bucket('render-out/lines', 'hf://buckets/HarshithReddy05/tirumala-reel/audio', quiet=True)
+api.sync_bucket('render-out/lines', os.environ.get('AUDIO_DEST', 'hf://buckets/HarshithReddy05/tirumala-reel/audio'), quiet=True)
 print('uploaded', len(os.listdir('render-out/lines')), 'line files')

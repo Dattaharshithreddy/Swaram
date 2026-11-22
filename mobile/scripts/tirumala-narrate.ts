@@ -36,7 +36,7 @@ console.log('weights', ckpt, '| recordings', datasets.join(', ') || 'NONE');
 if (!datasets.length) throw new Error('recordings dataset not found');
 const refWav = new Uint8Array(0); const refText = '';
 // 2. the script
-let parts = JSON.parse(readFileSync('scripts/tirumala_parts.json', 'utf-8')) as { i: number; para: number; mood: string; text: string; speed: number }[];
+let parts = JSON.parse(readFileSync(`scripts/${process.env.REEL ?? 'tirumala'}_parts.json`, 'utf-8')) as { i: number; para: number; mood: string; text: string; speed: number }[];
 if (ONLY.length) parts = parts.filter((p) => ONLY.includes(p.i));
 const emoSrc = readFileSync('src/edge/emotions.ts', 'utf-8');
 const READS: Record<string, string> = {};
@@ -80,7 +80,7 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 `print('lines with a mood clip:', sum(_p['voice'] != 'datta' for _p in APP_RENDER['parts']), 'of', len(APP_RENDER['parts']))` });
 
 // 3. run it
-const slug = 'swaram-tirumala-narration';
+const slug = `swaram-${process.env.REEL ?? 'tirumala'}-narration`;
 const t0 = Date.now();
 let pushed: { url?: string } = {};
 for (let w = 0; ; w++) {   // Kaggle allows 2 GPU sessions at once; wait for a free slot (up to ~4 h)
