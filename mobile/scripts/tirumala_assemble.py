@@ -6,7 +6,8 @@ from huggingface_hub import HfApi
 parts = json.load(open(f"scripts/{os.environ.get('REEL', 'tirumala')}_parts.json", encoding='utf-8'))
 wav = {int(re.findall(r'\d+', os.path.basename(f))[-1]): f for f in glob.glob('render-out/narr/**/*.wav', recursive=True)}
 missing = [p['i'] for p in parts if p['i'] not in wav]
-if missing: sys.exit(f'missing sentences {missing}')
+if missing and not os.environ.get('ONLY'): sys.exit(f'missing sentences {missing}')
+have_para = {q['para'] for q in parts if all(r['i'] in wav for r in parts if r['para'] == q['para'])}
 os.makedirs('render-out/lines', exist_ok=True)
 SR = 24000; gap = np.zeros(int(float(os.environ.get('GAP', 0.30)) * SR), np.float32); tail = np.zeros(int(float(os.environ.get('TAIL', 0.35)) * SR), np.float32)
 MAXP = float(os.environ.get('MAX_PAUSE', 0))   # >0: any pause inside a sentence longer than this is shortened to it
@@ -26,12 +27,12 @@ def squeeze(a):
             k = j
         else: k += 1
     out.append(a[seg_start:(trail + 1) * w]); return np.concatenate(out)
-for para in sorted({p['para'] for p in parts}):
+for para in sorted(have_para):
     chunks = []
     for p in [p for p in parts if p['para'] == para]:
         a, sr = sf.read(wav[p['i']], dtype='float32'); assert sr == SR, sr
         if a.ndim > 1: a = a.mean(1)
-        a = squeeze(a); chunks += [a, gap]
+        a = squeeze(a); chunks += [a, np.zeros(int(p['gap_after'] * SR), np.float32) if p.get('gap_after') else gap]
     out = np.concatenate(chunks[:-1] + [tail])
     sf.write(f'render-out/lines/l{para + 1:02d}.wav', out, SR, subtype='PCM_16')
     print(f'l{para + 1:02d}', round(len(out) / SR, 2), 's')
