@@ -1,0 +1,41 @@
+name: Arjuna reel - pictures on Kaggle (Qwen-Image)
+# Makes the Ramayana-style pictures for the Arjuna–Babruvahana reel on the owner's free Kaggle GPU and leaves them
+# ENCRYPTED (key: render/arjuna_pub.pem) on branch arjuna-art-enc. Settings: reel/arjuna/job.json on branch reel/arjuna.
+on:
+  push:
+    branches: [reel/arjuna]
+    paths: [reel/arjuna/job.json]
+permissions:
+  contents: write
+jobs:
+  art:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Make the pictures on Kaggle
+        working-directory: mobile
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set +e
+          node --experimental-strip-types scripts/arjuna-art.ts > out.txt 2>&1; code=$?
+          level=notice; [ $code -ne 0 ] && level=error
+          echo "::$level title=Kaggle pictures::$(grep -v -i -e warning -e reparsing out.txt | tail -40 | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
+          exit $code
+      - name: Encrypt and hand off
+        if: hashFiles('mobile/render-out/art/**') != ''
+        run: |
+          set -e
+          cd mobile/render-out && tar czf /tmp/art.tgz art
+          openssl rand -hex 32 > /tmp/k.txt
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in /tmp/art.tgz -out /tmp/art.tgz.enc -pass file:/tmp/k.txt
+          openssl pkeyutl -encrypt -pubin -inkey $GITHUB_WORKSPACE/render/arjuna_pub.pem -in /tmp/k.txt -out /tmp/k.enc
+          rm -f /tmp/k.txt /tmp/art.tgz
+          cd $GITHUB_WORKSPACE && git config user.name swaram-bot && git config user.email actions@users.noreply.github.com
+          git checkout -q --orphan art-tmp && git rm -rf -q . && cp /tmp/art.tgz.enc /tmp/k.enc . && git add art.tgz.enc k.enc
+          git commit -q -m "encrypted arjuna pictures" && git push -q -f origin HEAD:arjuna-art-enc

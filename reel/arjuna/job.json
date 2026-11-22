@@ -1,0 +1,50 @@
+{
+ "slug": "arjuna-art",
+ "w": 1664,
+ "h": 928,
+ "style": "Hand-drawn 2D anime film still in the style of a classic 1990s Indian epic animated feature film, cel animation, clean dark ink outlines, flat colours with one soft shadow tone, expressive Indian faces drawn in a semi-realistic anime style. ",
+ "neg": "3D render, photorealistic, text, watermark, extra fingers, deformed hands, extra limbs, blurry, low resolution",
+ "items": [
+  {
+   "name": "arjuna",
+   "prompt": "Character model sheet on a plain light cream background: the same character shown full body front view, full body three-quarter view and a close-up portrait of the face. Arjuna, mighty royal archer prince about 40 years old, warm brown skin, sharp handsome face, thin black moustache, long wavy black hair to the shoulders, tall layered golden kireetam crown with a red ruby, gold earrings, layered gold necklaces and armlets, red silk angavastram over a bare muscular chest, golden-yellow silk dhoti with a red border, holding the great golden bow Gandiva, quiver on his back.",
+   "seeds": [
+    11,
+    22
+   ]
+  },
+  {
+   "name": "babru",
+   "prompt": "Character model sheet on a plain light cream background: the same character shown full body front view, full body three-quarter view and a close-up portrait of the face. Babruvahana, young prince of Manipura, 18 years old, warm brown skin, gentle handsome clean-shaven face with big expressive eyes, black wavy hair, smaller layered golden kireetam crown with a blue sapphire, gold necklaces and armlets, blue silk angavastram over a bare slim chest, white silk dhoti with a gold border, holding a golden longbow.",
+   "seeds": [
+    11,
+    22
+   ]
+  },
+  {
+   "name": "ulupi",
+   "prompt": "Character model sheet on a plain light cream background: the same character shown full body front view, full body three-quarter view and a close-up portrait of the face. Ulupi, graceful Naga princess, light brown skin, beautiful calm face with large eyes, very long black hair, small golden crown shaped like a five-hooded cobra, emerald green and silver silk sari, pearl jewellery, a faint glow around her.",
+   "seeds": [
+    11,
+    22
+   ]
+  },
+  {
+   "name": "chitrangada",
+   "prompt": "Character model sheet on a plain light cream background: the same character shown full body front view, full body three-quarter view and a close-up portrait of the face. Chitrangada, warrior queen of Manipura, warm brown skin, strong beautiful face, black hair in a bun with white flowers, purple and gold silk sari, gold jewellery, a sword at her waist.",
+   "seeds": [
+    11,
+    22
+   ]
+  },
+  {
+   "name": "bhishma",
+   "prompt": "Character model sheet on a plain light cream background: the same character shown full body front view, full body three-quarter view and a close-up portrait of the face. Bhishma, the grand old warrior, very tall, warm brown skin, long flowing white beard and white hair, kind stern face, simple golden crown, white silk dhoti and white angavastram, holding a long bow.",
+   "seeds": [
+    11,
+    22
+   ]
+  }
+ ],
+ "v": 1
+}
