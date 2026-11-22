@@ -83,7 +83,7 @@ nb.cells.splice(1, 0, { cell_type: 'code', metadata: {}, outputs: [], execution_
 const slug = `swaram-${process.env.REEL ?? 'tirumala'}-narration`;
 const t0 = Date.now();
 let pushed: { url?: string } = {};
-for (let w = 0; ; w++) {   // Kaggle allows 2 GPU sessions at once; wait for a free slot (up to ~4 h)
+for (let w = 0; !process.env.FETCH_ONLY; w++) {   // Kaggle allows 2 GPU sessions at once; wait for a free slot (up to ~4 h)
   try { pushed = await pushNotebook(auth, slug, nb, { gpu: true, internet: true, timeoutSeconds: 5400, kernelSources: [TRAIN], datasetSources: datasets.map((d) => d.split('/').pop()!) }); break; }
   catch (e) { if (!String(e).includes('GPU session count') || w > 48) throw e; console.log('Kaggle GPU slots busy, waiting 5 min'); await new Promise((r) => setTimeout(r, 300000)); }
 }
@@ -94,6 +94,10 @@ for (let i = 0; i < 260; i++) {
   const s = await runStatus(auth, slug); state = s.state;
   if (i % 3 === 0) console.log(`${Math.round((Date.now() - t0) / 60000)} min`, s.state, s.message ?? '');
   if (['complete', 'error', 'cancelled'].includes(s.state)) break;
+  if (s.state === 'unknown' && i % 6 === 5) {   // status API sometimes returns an unrecognised value: trust the outputs instead
+    const o = await runOutputs(auth, slug).catch(() => ({ files: [] as { fileName: string }[] }));
+    if (o.files.some((f) => f.fileName.endsWith('swaram-render.zip'))) { console.log('status unknown but outputs ready (raw:', s.raw, ')'); state = 'complete'; break; }
+  }
 }
 const out = await runOutputs(auth, slug);
 if (state !== 'complete') {

@@ -79,11 +79,11 @@ export async function pushNotebook(
 export type RunState = 'queued' | 'running' | 'complete' | 'error' | 'cancelled' | 'unknown';
 
 export async function runStatus(auth: KaggleAuth, slug: string): Promise<{ state: RunState; raw: string; message?: string }> {
-  const res = await call<{ status?: string | number; failureMessage?: string }>(auth, 'GetKernelSessionStatus', {
+  const res = await call<{ status?: string | number; state?: string; failureMessage?: string }>(auth, 'GetKernelSessionStatus', {
     userName: auth.username.trim(),
     kernelSlug: slug,
   });
-  const raw = String(res.status ?? '').toUpperCase();
+  const raw = String(res.status ?? res.state ?? '').toUpperCase();
   const state: RunState =
     raw.includes('COMPLETE') || raw === '2'
       ? 'complete'

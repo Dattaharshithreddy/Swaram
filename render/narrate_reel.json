@@ -1,1 +1,1 @@
-{ "reel": "arjuna", "dest": "hf://buckets/HarshithReddy05/tirumala-reel/arjuna/audio", "env": { "SPEED_MOOD": "1.06", "MAX_PAUSE": "0.22", "GAP": "0.20" }, "v": 8 }
+{ "reel": "arjuna", "dest": "hf://buckets/HarshithReddy05/tirumala-reel/arjuna/audio", "env": { "SPEED_MOOD": "1.06", "MAX_PAUSE": "0.22", "GAP": "0.20", "FETCH_ONLY": "1" }, "v": 9 }
