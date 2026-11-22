@@ -1,1 +1,1 @@
-{ "reel": "varaha", "dest": "hf://buckets/HarshithReddy05/tirumala-reel/varaha/audio", "env": { "SPEED_MOOD": "1.06", "GAP": "0.20", "TAIL": "0.25", "MAX_PAUSE": "0.22", "ONLY": "26,27,29,28" }, "v": 4 }
+{"reel": "varaha", "dest": "hf://buckets/HarshithReddy05/tirumala-reel/varaha/audio", "env": {"SPEED_MOOD": "1.06", "GAP": "0.20", "TAIL": "0.25", "MAX_PAUSE": "0.22", "ONLY": "3,4,5,6,30"}, "v": 5}
