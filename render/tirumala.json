@@ -1,1 +1,1 @@
-{ "fetch": "forge/.*_3d\\.glb$", "slug": "varaha-forge-3", "v": 17 }
+{ "logonly": true, "slug": "varaha-forge-3", "grep": "done|SKIP|FAIL|ERROR|have|FORGE|status", "lines": 20, "v": 18 }
