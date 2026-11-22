@@ -18,7 +18,15 @@ from huggingface_hub import list_repo_files, hf_hub_download
 print(subprocess.run("nvidia-smi -L", shell=True, capture_output=True, text=True).stdout, flush=True)
 os.makedirs("/kaggle/working/art", exist_ok=True)
 t0 = time.time()
-pipe = DiffusionPipeline.from_pretrained("diffusers/qwen-image-nf4", torch_dtype=torch.bfloat16, device_map="balanced")
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+from diffusers import QwenImagePipeline, QwenImageTransformer2DModel, AutoencoderKLQwenImage
+from transformers import Qwen2_5_VLForConditionalGeneration
+REPO = "diffusers/qwen-image-nf4"
+te = Qwen2_5_VLForConditionalGeneration.from_pretrained(REPO, subfolder="text_encoder", torch_dtype=torch.bfloat16, device_map={"": "cuda:1"})
+tr = QwenImageTransformer2DModel.from_pretrained(REPO, subfolder="transformer", torch_dtype=torch.bfloat16, device_map={"": "cuda:0"})
+vae = AutoencoderKLQwenImage.from_pretrained(REPO, subfolder="vae", torch_dtype=torch.bfloat16).to("cuda:0")
+pipe = QwenImagePipeline.from_pretrained(REPO, text_encoder=te, transformer=tr, vae=vae, torch_dtype=torch.bfloat16)
+print("devices: text", te.device, "| image", tr.device, "| vae", vae.device, "| pipe", pipe._execution_device, torch.cuda.memory_allocated(0) // 2**20, torch.cuda.memory_allocated(1) // 2**20, "MB", flush=True)
 lf = [f for f in list_repo_files("lightx2v/Qwen-Image-Lightning") if "8steps" in f and f.endswith(".safetensors") and "Edit" not in f]
 lf.sort(); print("lightning files", lf, flush=True)
 if lf:
@@ -34,8 +42,10 @@ for it in JOB["items"]:
         if os.path.exists(out): continue
         try:
             t1 = time.time()
-            img = pipe(prompt=JOB.get("style", "") + it["prompt"], negative_prompt=JOB.get("neg", " "), width=JOB.get("w", 928), height=JOB.get("h", 1664),
-                       num_inference_steps=steps, true_cfg_scale=1.0 if LIGHT else 4.0, generator=torch.Generator("cpu").manual_seed(sd)).images[0]
+            with torch.no_grad():
+                pe, pm = pipe.encode_prompt(prompt=JOB.get("style", "") + it["prompt"], device=torch.device("cuda:1"))
+            img = pipe(prompt_embeds=pe.to("cuda:0"), prompt_embeds_mask=pm.to("cuda:0") if pm is not None else None, width=JOB.get("w", 928), height=JOB.get("h", 1664),
+                       num_inference_steps=steps, true_cfg_scale=1.0, generator=torch.Generator("cpu").manual_seed(sd)).images[0]
             img.save(out); print("made", out, round(time.time() - t1), "s", flush=True)
         except Exception: traceback.print_exc()
 print("ART_DONE", sorted(os.listdir("/kaggle/working/art")), flush=True)
