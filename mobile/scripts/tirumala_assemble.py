@@ -27,6 +27,8 @@ def squeeze(a):
             k = j
         else: k += 1
     out.append(a[seg_start:(trail + 1) * w]); return np.concatenate(out)
+if os.environ.get('PARTIAL'):   # single-sentence fixes: one file per requested sentence, to a scratch folder
+    have_para = set(); [sf.write(f'render-out/lines/s{p["i"]:02d}.wav', squeeze(sf.read(wav[p['i']], dtype='float32')[0]), SR, subtype='PCM_16') for p in parts if p['i'] in wav]
 for para in sorted(have_para):
     chunks = []
     for p in [p for p in parts if p['para'] == para]:
