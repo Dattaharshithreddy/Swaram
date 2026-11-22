@@ -51,7 +51,7 @@ jobs:
           pip install -q soundfile numpy huggingface_hub
           python3 scripts/tirumala_assemble.py > a.txt 2>&1 || { echo "::error title=Lines::$(tail -15 a.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"; exit 1; }
           echo "::notice title=Lines::$(tail -16 a.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"
-          cd render-out/lines && ls l*.wav | sort | sed "s/.*/file '&'/" > l.txt
+          cd render-out/lines && ls *.wav | sort | sed "s/.*/file '&'/" > l.txt
           ffmpeg -y -v error -f concat -safe 0 -i l.txt -af "loudnorm=I=-14:TP=-1.5" -c:a libmp3lame -b:a 192k /tmp/narr.mp3
           openssl rand -hex 32 > /tmp/k.txt
           openssl enc -aes-256-cbc -pbkdf2 -salt -in /tmp/narr.mp3 -out /tmp/narr.mp3.enc -pass file:/tmp/k.txt
