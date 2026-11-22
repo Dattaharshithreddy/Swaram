@@ -1,1 +1,1 @@
-{ "logonly": true, "slug": "varaha-forge-2", "grep": "done|SKIP|FAIL|ERROR|have|sync fail|FORGE", "lines": 30, "v": 14 }
+{ "fetch": "forge/.*\\.png$|forge_run.log", "slug": "varaha-forge-2", "v": 15 }
