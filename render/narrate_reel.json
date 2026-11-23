@@ -1,1 +1,1 @@
-{ "reel": "arjunakatha", "dest": "hf://buckets/HarshithReddy05/tirumala-reel/arjuna/audio", "env": { "SPEED_MOOD": "1.06", "MAX_PAUSE": "0.22", "GAP": "0.20", "GPU": "0", "STEPS": "32" }, "v": 11 }
+{ "reel": "laddu", "dest": "hf://buckets/HarshithReddy05/tirumala-reel/laddu/audio", "env": { "SPEED_MOOD": "1.06", "MAX_PAUSE": "0.22", "GAP": "0.20", "GPU": "0", "STEPS": "32" }, "v": 12 }
