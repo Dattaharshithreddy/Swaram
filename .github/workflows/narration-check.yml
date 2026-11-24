@@ -1,0 +1,18 @@
+name: Narration check (transcribe, text only)
+on:
+  push:
+    branches: [render/tirumala]
+    paths: [render/narration_check.json]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Transcribe
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install -q faster-whisper huggingface_hub
+          python3 mobile/scripts/narration_check.py > t.txt 2>err.txt || { echo "::error title=Check::$(tail -15 err.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"; exit 1; }
+          echo "::notice title=Transcript::$(cat t.txt | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
