@@ -13,6 +13,6 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          pip install -q faster-whisper huggingface_hub
+          pip install -q faster-whisper huggingface_hub soundfile scipy numpy
           python3 mobile/scripts/narration_check.py > t.txt 2>err.txt || { echo "::error title=Check::$(tail -15 err.txt | tr '\n' '\r' | sed 's/\r/%0A/g')"; exit 1; }
           echo "::notice title=Transcript::$(cat t.txt | sed 's/%/%25/g' | tr '\n' '\r' | sed 's/\r/%0A/g')"
