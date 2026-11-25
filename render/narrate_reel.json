@@ -1,13 +1,12 @@
 {
- "reel": "arjunakatha",
- "dest": "hf://buckets/HarshithReddy05/tirumala-reel/arjuna/audio",
+ "reel": "puru",
+ "dest": "hf://buckets/HarshithReddy05/tirumala-reel/puru/audio",
  "env": {
   "SPEED_MOOD": "1.06",
   "MAX_PAUSE": "0.22",
   "GAP": "0.20",
   "GPU": "0",
-  "STEPS": "32",
-  "ONLY": "22,23,24,25"
+  "STEPS": "32"
  },
- "v": 15
+ "v": 16
 }
