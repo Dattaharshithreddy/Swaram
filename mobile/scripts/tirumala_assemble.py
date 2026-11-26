@@ -28,7 +28,7 @@ def squeeze(a):
         else: k += 1
     out.append(a[seg_start:(trail + 1) * w]); return np.concatenate(out)
 if os.environ.get('PARTIAL'):   # single-sentence fixes: one file per requested sentence, to a scratch folder
-    have_para = set(); [sf.write(f'render-out/lines/s{p["i"]:02d}.wav', squeeze(sf.read(wav[p['i']], dtype='float32')[0]), SR, subtype='PCM_16') for p in parts if p['i'] in wav]
+    have_para = set(); [sf.write(f'render-out/lines/s{p["i"]:02d}.wav', np.concatenate([squeeze(sf.read(wav[p['i']], dtype='float32')[0]), tail]), SR, subtype='PCM_16') for p in parts if p['i'] in wav]   # tail = digital silence, so the preview splits per sentence
 for para in sorted(have_para):
     chunks = []
     for p in [p for p in parts if p['para'] == para]:
