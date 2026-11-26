@@ -1,13 +1,14 @@
 {
  "reel": "puru",
- "dest": "hf://buckets/HarshithReddy05/tirumala-reel/puru/audio_fix",
+ "dest": "hf://buckets/HarshithReddy05/tirumala-reel/puru/audio_s44",
  "env": {
   "SPEED_MOOD": "1.06",
-  "MAX_PAUSE": "0.22",
+  "MAX_PAUSE": "0",
   "GAP": "0.20",
   "GPU": "0",
   "STEPS": "32",
-  "ONLY": "3,4,5,6,7,8,9,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47"
+  "ONLY": "44",
+  "PARTIAL": "1"
  },
- "v": 17
+ "v": 18
 }
