@@ -1,14 +1,12 @@
 {
- "reel": "puru",
- "dest": "hf://buckets/HarshithReddy05/tirumala-reel/puru/audio_s02",
+ "reel": "kunti",
+ "dest": "hf://buckets/HarshithReddy05/tirumala-reel/kunti/audio",
  "env": {
   "SPEED_MOOD": "1.06",
-  "MAX_PAUSE": "0",
+  "MAX_PAUSE": "0.3",
   "GAP": "0.20",
   "GPU": "0",
-  "STEPS": "32",
-  "ONLY": "2,9",
-  "PARTIAL": "1"
+  "STEPS": "32"
  },
- "v": 20
+ "v": 21
 }
