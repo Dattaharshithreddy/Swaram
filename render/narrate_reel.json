@@ -3,10 +3,12 @@
  "dest": "hf://buckets/HarshithReddy05/tirumala-reel/kunti/audio",
  "env": {
   "SPEED_MOOD": "1.06",
-  "MAX_PAUSE": "0.3",
+  "MAX_PAUSE": "0",
   "GAP": "0.20",
   "GPU": "0",
-  "STEPS": "32"
+  "STEPS": "32",
+  "ONLY": "6",
+  "PARTIAL": "1"
  },
- "v": 21
+ "v": 22
 }
