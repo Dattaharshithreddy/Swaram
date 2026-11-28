@@ -1,14 +1,14 @@
 {
- "reel": "kunti",
- "dest": "hf://buckets/HarshithReddy05/tirumala-reel/kunti/audio",
+ "reel": "arjunakatha",
+ "dest": "hf://buckets/HarshithReddy05/tirumala-reel/arjuna/audio",
  "env": {
   "SPEED_MOOD": "1.06",
   "MAX_PAUSE": "0",
   "GAP": "0.20",
   "GPU": "0",
   "STEPS": "32",
-  "ONLY": "6",
+  "ONLY": "14",
   "PARTIAL": "1"
  },
- "v": 23
+ "v": 24
 }
